@@ -1,0 +1,6 @@
+
+Dependencies:
+ - Django
+ - An SQL database (mysql tested)
+ - PIL
+ - elementtree

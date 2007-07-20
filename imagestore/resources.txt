@@ -1,0 +1,277 @@
+imagestore3 resource layout
+
+General notes:
+
+all search results are Atom feeds with opensearch extensions
+    - all results include summary number of images, list of tags and count
+    - full searches also return the actual results
+
+use xhtml to represent most metadata
+
+users are hCard microformat xhtml
+
+conditional GET supported where possible
+	  - everything has modified date
+	  - image data has ETags
+
+HEAD supported (almost?) everywhere GET is
+
+all uploads require:
+    complete image data
+    owner
+    visibility info
+
+    missing data can be defaulted depending on where the image is uploaded to
+
+DATE syntax: YYYY(-MM(-DD-(-HH(-MM(-SS)?)?)?)?)?{+TZ}
+ where:
+	period: day,week,month,year
+	date:
+		YYYY	- must be present
+		MM	- if absent, defaults to 1 (Jan)
+		DD	- if absent, defaults to 1st
+		(DD can't be present without MM)
+
+		+TZ	TZ=hours offset from UTC (+ is always present: +-8 = -8 hour offset)
+
+	internally all dates are stored and manipulated in UTC
+
+DATERANGE := DATE	     - a 1 day range
+	  |  DATE,DATE	     - a range of dates (min-earliest, max-latest)
+	  |  period ':' DATE - a calendar period of dates
+	  |  '<' DATERANGE   - before daterange
+	  |  '<=' DATERANGE  - before and including
+	  |  '=' DATERANGE   - daterange
+	  |  '>=' DATERANGE  - after and including
+	  |  '>' DATERANGE   - after
+
+period	  := 'day'	- daterange of a day
+	  |  'week'	- week
+	  |  'month'	- month
+	  |  'year'	- year
+
+TAG syntax:
+    all tags lower case
+    accented characters are stripped to unaccented form
+
+    <tag>	plain unscoped tag
+    (:<tag>)+	scoped tag
+
+    for example:
+	"sydney"			all images tagged with sydney
+	":sydney"			specifically unscoped sydney
+	":place:australia:nsw:sydney"	specifically Sydney, Australia
+
+	":place:ireland:claire"
+	":person:fitzhardinge:claire"
+
+    top level scopes:
+	place		- has special uses
+	person		- individuals
+	event
+	etc...
+
+TAGs and images
+
+Images can either be explicitly tagged, or implicitly tagged.
+
+Implicit tagging happens when an image is listed as being taken by a
+particular camera on a date, and the camera has a tag for that date,
+then
+
+Search syntax:
+
+- general, terms can be separated by either ' ', '+', '&' or '|'
+  ' ', '+' and '&' are synonymous, meaning the AND operator
+  '|' is the OR operator
+  queries can be grouped with ()
+
+  predicates:
+    TAG		a simple tag or scoped tag; scoped tags always start with :
+    ID		an image ID; TAGS are not allowed to be completely numeric
+    created:DATERANGE	creation date
+    updated:DATERANGE	last update date
+    owner:USER		user
+
+    predicate may be preceeded with '-' to negate it
+
+Search
+------
+
+Any URL which returns an Atom feed can be searched to return a subset
+of the feed.  Searchable feeds are identifiable with opensearch
+elements.
+
+Each feed subset has a distinct URL, and can be further subsearched.
+opensearch links provide ways to narrow and widen the search.
+
+Searching itself is implemented with a GET query ?q=SEARCH, and so can
+be implemented with a simple form (SEARCH is URL-encoded).
+
+examples
+    ?q=apple+tree
+    ?q=(claire|rowan) birthday
+
+URL encoding:
+    Search URLs prefixed with /-/, as in Gdata
+    /-separated components are considered to be '&'ed together
+    or in a single component
+
+    /--/ starts a summary search; this doesn't return specific
+    results, but just the summary of the results (number of images,
+    date range, keywords, etc).  Normal searches also include the
+    summary.
+
+    examples:
+        user/jeremy/images/-/claire/birthday
+	user/jeremy/images/-/claire+birthday
+	user/jeremy/images/-/(claire|rowan)&birthday
+        
+    (would be more inclined towards /q/ and /s/ if GData didn't set a
+    precident)
+
+
+RESOURCES
+---------
+
+imagestore/	 - root
+
+	default/X	- imagestore2 backwards compat
+		default collection dropped support,
+		redirect 301-moved permanently
+	
+	--------------------
+
+	image/	 - root of images, canonical path to images
+		GET - nothing/summary?
+		POST - create new image
+		     posting an image creates new Atom entry
+		     with corresponding media pointer
+
+	image/XXXX
+		XXXX = sha1 hash of image; any operation gets a
+		 redirect 307 to the canonical path (if it exists,
+		 404 otherwise).   Image URN?
+
+	image/NNNN/	   - image by primary key
+		GET - Atom entry
+		PUT - update Atom data
+		POST - create new image derived from this one
+		DELETE - delete image (?)
+
+	image/NNNN/meta    - image by primary key
+		GET - get metadata
+		PUT - update metadata
+		    metadata: xhtml representation of metadata,
+			      including links to all image forms
+			      - DL for metadata
+			      - UL for lists
+			      - IMG for representations
+
+	image/NNNN/meta/NAME
+		GET - get value of specific metadata element
+		PUT - update metadata
+		DELETE - remove metadata
+
+	image/NNNN/pic/
+		GET - original image data
+
+	image/NNNN/SIZE.FORMAT
+		backwards compat - redirect to pic/SIZE.FORMAT
+
+	image/NNNN/pic/SIZE.FORMAT
+		GET - get image representation:
+		    SIZE := {icon,thumb,small,medium,large,full}
+		    FORMAT := {xml,jpg}
+			   xml: return xhtml? form of image, with metadata
+			   jpg: scaled jpg (original if not possible)
+
+	--------------------
+
+	tags/	- root of tags
+		GET - list of all tags
+
+	tags/TAG
+		GET - info about tag
+		PUT - update tag (user's photos)
+		DELETE - remove tag (user's photos)
+
+	tags/TAGS/image
+		GET - list of images tagged
+		(POST/DELETE for add/remove tags?)
+
+	--------------------
+
+	user/	- root of users
+		GET - get list of all users
+		PUT - ?
+		POST - create new user
+		DELETE - remove user
+
+	user/NAME
+		GET - user details
+		PUT - update user
+
+	user/NAME/image
+		GET - get list of users images
+		POST - create new image owned by user
+
+	user/NAME/image/public
+	user/NAME/image/restricted
+	user/NAME/image/private
+		GET - get list of users (public|restricted|private) images
+		POST - create new image owned by user and
+		     default to (public|restricted|private)
+
+	user/NAME/search
+		GET - get list of search results in users images
+		    - predicate search only
+		    - always scoped to user's images
+
+	user/NAME/view/NAME
+		GET - get results of saved search
+		POST - create a named search
+		PUT - update query
+
+	user/NAME/tags
+		GET - list of tag vocab for user
+
+	user/NAME/auth
+		POST - authenticate as user (mainly to test that UI has right info)
+		GET - return authentication state
+
+	user/NAME/cameras
+		Each user has a list of cameras they use.  When an
+		image is uploaded it can be associated with a camera.
+		Cameras can have keywords associated with a particular
+		date range (typically a place or event), which is
+		automatically associated with images taken by that
+		camera with in the date range.  An image uploaded by
+		one user may refer to someone else's camera; the
+		camera can still only be in one place at one time.
+
+		GET - list of user's cameras
+		POST - create new camera
+
+	user/NAME/cameras/CAMERA
+		GET - data about camera
+
+	user/NAME/cameras/CAMERA
+		GET - return all date ranges
+
+	user/NAME/cameras/CAMERA/DATE,DATE
+		GET - list of tags covered by date range
+		    - each result has specific date range for tag
+
+	user/NAME/cameras/CAMERA/DATE,DATE/TAG
+		POST - add tag for date range
+		DELETE - remove tag for date range
+
+	user/NAME/friends
+		A user's friends can see their restricted photos
+
+		GET - list user's friends
+
+	user/NAME/friends/NAME
+		POST - add friend
+		DELETE - remove friend
