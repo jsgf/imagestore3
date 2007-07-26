@@ -5,3 +5,9 @@ from imagestore.media import Media, MediaChunk
 from imagestore.tag import Tag
 from imagestore.camera import Camera, CameraTags
 from imagestore.user import User, UserProfile
+
+for c in [ Picture, Tag, Camera, CameraTags, User, UserProfile ]:
+    try:
+        del c._meta._all_related_many_to_many_objects
+    except AttributeError:
+        pass

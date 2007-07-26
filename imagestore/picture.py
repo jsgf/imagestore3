@@ -33,14 +33,14 @@ class Picture(models.Model):
     PRIVATE=2
     
     sha1hash = models.CharField("unique sha1 hash of picture",
-                                maxlength=40, db_index=True, unique=True)
-    mimetype = models.CharField("mime type for picture", maxlength=40)
+                                maxlength=40, db_index=True, unique=True, editable=False)
+    mimetype = models.CharField("mime type for picture", maxlength=40, editable=False)
 
     md5hash = models.CharField("unique md5 hash of picture",
-                               maxlength=32, db_index=True, unique=True)
-    datasize = models.PositiveIntegerField("raw picture size in bytes")
+                               maxlength=32, db_index=True, unique=True, editable=False)
+    datasize = models.PositiveIntegerField("raw picture size in bytes", editable=False)
 
-    derived_from = models.ForeignKey('self', null=True)
+    derived_from = models.ForeignKey('self', null=True, related_name='derivatives')
 
     def mediakey(self, variant='orig'):
         return '%d/%s' % (self.id, variant)
@@ -48,8 +48,8 @@ class Picture(models.Model):
     def media(self, variant='orig'):
         return Media.get(self.mediakey(variant))
     
-    width = models.PositiveIntegerField()
-    height = models.PositiveIntegerField()
+    width = models.PositiveIntegerField(editable=False)
+    height = models.PositiveIntegerField(editable=False)
     orientation = models.PositiveIntegerField()
 
     created_time = models.DateTimeField("time picture was taken")
@@ -58,7 +58,8 @@ class Picture(models.Model):
     modified_time = models.DateTimeField("time picture was last modified",
                                          auto_now=True)
 
-    original_ref = models.CharField("external reference for picture", maxlength=100)
+    original_ref = models.CharField("external reference for picture",
+                                    maxlength=100, blank=True)
 
     camera = models.ForeignKey(Camera, null=True,
                                verbose_name="camera which took this picture")
@@ -73,19 +74,28 @@ class Picture(models.Model):
                                      related_name='photographed_pics')
     title = models.CharField(maxlength=127, blank=True)
     description = models.TextField(blank=True)
-    copyright = models.TextField(blank=True)
+    copyright = models.CharField(maxlength=100, blank=True)
 
     tags = models.ManyToManyField(Tag, verbose_name='tags')
 
+    def __str__(self):
+        return '%d: %s' % (self.id, self.title)
+
     class Meta:
         ordering = [ 'created_time' ]
+        get_latest_by = [ '-created_time' ]
 
     class Admin:
-        pass
+        fields = (
+            (None, {
+            'fields': ('title', 'created_time', 'description', 'camera',
+                       ('owner', 'photographer'), 'copyright', 'visibility', 'tags'),
+            }),
+            )
 
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.views.picture', str(self.id))
+        return ('imagestore.picture.picture', str(self.id), { 'picid': str(self.id) })
 
     def get_picture_url(self, size='thumbnail'):
         try:
@@ -95,7 +105,7 @@ class Picture(models.Model):
         return '%spic/%s%s' % (self.get_absolute_url(), size, ext)
 
     def get_comment_url(self):
-        return '%scomments/' % self.get_absolute_url()
+        return '%scomment/' % self.get_absolute_url()
 
     def picture_chunks(self, variant='orig'):
         return self.media(variant).chunks()
@@ -107,31 +117,45 @@ class Picture(models.Model):
     def get_urn(self):
         return 'urn:picture:%d' % self.id
 
+    urn.register('picture', lambda urn: Picture.objects.get(id=int(urn[0])))
+
     def exif(self):
         img = string.join([ v for v in self.picture_chunks() ], '')
         return EXIF.process_file(StringIO(img))
 
-    urn.register('picture', lambda urn: Picture.objects.get(id=int(urn[0])))
+    def camera_tags(self):
+        if self.camera is None:
+            return []
+
+        s = set()
+        for ct in self.camera.cameratags_set.filter(start__lte = self.created_time,
+                                                    end__gte = self.created_time):
+            s = s | set(ct.tags.all())
+
+        ret = list(s)
+        ret.sort(lambda a,b: cmp(a.id, b.id))
+        return ret
 
     def effective_tags(self):
-        pass
+        ret = list(set(self.tags.all()) | set(self.camera_tags()))
+        ret.sort(lambda a,b: cmp(a.id, b.id))
+        return ret
 
     @staticmethod
     def canon_tags(tags):
         if type(tags) is types.StringType:
-            tags = [ t.strip().lower() for t in re.split(' *[,;] *', tags) ]
+            tags = [ t.strip().lower() for t in re.split(' *[,;]+ *', tags) ]
 
         return [ type(t) is types.StringType and Tag.tag(t) or t
                  for t in tags ]
                 
     def add_tags(self, tags):
-        tags = self.canon_tags(tags)
-        for t in tags:
+        for t in self.canon_tags(tags):
             self.tags.add(t)
 
     def del_tags(self, tags):
-        tags = self.canon_tags(tags)
-        self.tags.remove(tags)
+        for t in self.canon_tags(tags):
+            self.tags.remove(t)
 
 class PictureEntry(AtomEntry):
     def __init__(self, p = None):
@@ -146,22 +170,61 @@ class PictureEntry(AtomEntry):
         p = self.picture
         assert p is not None
 
-#        tags = xhtml.ul({'class': 'tags'},
-#                        [ xhtml.li(list(p.tags.all())) ])
-        
+        atomtags = [ atom.category({'term': tag.canonical() }) for tag in p.effective_tags() ]
+        htmltags = xhtml.ul([ xhtml.li(tag.render()) for tag in p.effective_tags() ])
+
+        photog = None
+        if p.photographer is not None:
+            photog = xhtml.p('Photographer:', microformat.hcard(p.photographer))
+
+        html_derivatives = None
+        if p.derivatives.count() != 0:
+            html_derivatives = xhtml.p('Derivatives:',
+                                       xhtml.ul([ xhtml.li(xhtml.a({'href': deriv.get_absolute_url() },
+                                                                   '%d: %s' % (deriv.id, deriv.title)))
+                                                  for deriv in p.derivatives.all() ]))
+
+        derived_from = None
+        if p.derived_from is not None:
+            derived_from = xhtml.p(xhtml.a({'href': p.derived_from.get_absolute_url()},
+                                           'Derived from %d: %s' % (p.derived_from.id,
+                                                                    p.derived_from.title)))
+            
+        content = [ xhtml.a({'href': p.get_absolute_url()},
+                            xhtml.img({'src': p.get_picture_url('orig'),
+                                       'width': str(image.sizes['tiny'][0]),
+                                       'height': str(image.sizes['tiny'][1]),
+                                       'alt': p.title })),
+                    xhtml.p('Owner:', microformat.hcard(p.owner)),
+                    photog,
+                    derived_from,
+                    html_derivatives,
+                    xhtml.span('Taken with: ',
+                               xhtml.a({'href': p.camera.get_absolute_url()},
+                                       p.camera.nickname)),
+                    xhtml.p('Tags:', htmltags),
+                    xhtml.a({'href': p.get_comment_url()},
+                            '%d comments' % p.comment_set.count()) ]
+
+        content = [ c for c in content if c is not None ]
+
+        related = [ atom.link({'rel': 'related',
+                               'href': deriv.get_absolute_url(),
+                               'class': 'derivative' })
+                    for deriv in p.derivatives.all() ]
+
         ret = atom.entry(atom.id(self.picture.get_urn()),
                          atom.title(p.title or 'untitled #%d' % p.id),
                          atom.author(atomperson(p.owner)),
-                         atom.summary(xhtml.h3(p.title),
-                                      xhtml.a({ 'href': p.get_absolute_url() },
-                                              xhtml.img({'src': p.get_picture_url('medium') }))),
                          atom.updated(atomtime(p.modified_time)),
+                         atom.published(atomtime(p.uploaded_time)),
                          imst.created(atomtime(p.created_time)),
-                         imst.uploaded(atomtime(p.uploaded_time)),
-#                         tags,
+                         atomtags,
                          atom.link({'rel': 'comments', 'href': p.get_comment_url() }),
-                         atom.content({ 'src': p.get_absolute_url(),
-                                        'type': p.mimetype }))
+                         atom.link({'rel': 'self', 'href': p.get_absolute_url()}),
+                         related,
+                         atom.content({ 'type': 'xhtml' }, xhtml.div(content))
+                         )
         if p.camera:
             ret.append(atom.link({ 'rel': 'camera', 'href': p.camera.get_absolute_url() }))
 
@@ -196,7 +259,10 @@ class PictureImage(RestBase):
         
 class PictureFeed(AtomFeed):
     def __init__(self):
-        AtomFeed.__init__(self, title='Pictures')
+        AtomFeed.__init__(self)
+
+    def title(self):
+        return 'Pictures'
 
     def filter(self, kwargs):
         filter = Q()
@@ -272,31 +338,48 @@ class Comment(models.Model):
 
 class CommentFeed(AtomFeed):
     def __init__(self):
-        AtomFeed.__init__(self, title='Comments')
+        AtomFeed.__init__(self)
+
+    def title(self):
+        return 'Comments for #%d: %s' % (self.picture.id, self.picture.title or 'untitled')
 
     def entries(self, **kwargs):
-        return [ CommentEntry(p)
-                 for p in Comment.objects.filter(picture=self.picture) ]
+        return [ CommentEntry(c)
+                 for c in Comment.objects.filter(picture=self.picture) ]
 
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.views.comments', { 'picid': self.picture.id })
+        return ('imagestore.picture.commentfeed',
+                (str(self.picture.id), ),
+                { 'picid': str(self.picture.id) })
                   
 
 class CommentEntry(AtomEntry):
-    def __init__(self):
+    def __init__(self, comment=None):
         AtomEntry.__init__(self)
+        if comment is not None:
+            self.comment = comment
+
+picturefeed     = PictureFeed()
+picturesearch   = PictureFeed()
+picturesummary  = PictureFeed()
+picture         = PictureEntry()
+pictureexif     = PictureExif()
+pictureimage    = PictureImage()
+commentfeed     = CommentFeed()
+comment         = CommentEntry()
 
 urlpatterns = \
   patterns('',
-           ('^$',                   PictureFeed()),
-           ('^-/(?P<search>.*)$',   PictureFeed()),
-           ('^--/(?P<summary>.*)$', PictureFeed()),
+           ('^$',                       picturefeed),
+           ('^-/(?P<search>.*)$',       picturesearch),
+           ('^--/(?P<summary>.*)$',     picturesummary),
            
-           ('(?P<picid>[0-9]+)/$',            'imagestore.views.picture'),
-           ('(?P<picid>[0-9]+)/exif/$',       'imagestore.views.exif'),
-           ('(?P<picid>[0-9]+)/comments/$',   'imagestore.views.comments'),
-           ('(?P<picid>[0-9]+)/pic/(?P<size>[a-z]*)(?:\.[a-z]*)?/?$', 'imagestore.views.pic_image'),
+           ('(?P<picid>[0-9]+)/$',                                      picture),
+           ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),
+           ('(?P<picid>[0-9]+)/pic/(?P<size>[a-z]*)(?:\.[a-z]*)?/?$',   pictureimage),
+           ('(?P<picid>[0-9]+)/comment/$',                              commentfeed),
+           ('(?P<picid>[0-9]+)/comment/(?P<commentid>[0-9]+)/?$',       comment),
            )
 
 

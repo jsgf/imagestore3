@@ -15,11 +15,11 @@ def exif(exif):
         v = exif[k]
         # skip unknown or long binary elements
         if (k == 'JPEGThumbnail' or
-            EXIF.FIELD_TYPES[v.field_type][1] in ('B') or 
-            len(v.values) > 20):
+            EXIF.FIELD_TYPES[v.field_type][1] in ('B', 'U') or
+            len(v.values) > 200):
             continue
 
-        dl.append(xhtml.dt(xhtml.abbr({'title': '0x%x' % v.tag,
+        dl.append(xhtml.dt(xhtml.abbr({'title': '0x%04x' % v.tag,
                                        'class': 'type-%s' % EXIF.FIELD_TYPES[v.field_type][1]},
                                       k)))
 
@@ -34,3 +34,25 @@ def exif(exif):
         dl.append(xhtml.dd(val))
 
     return dl
+
+def hcard(u):
+    if u is None:
+        return []
+    
+    up = u.get_profile()
+    
+    hcard = xhtml.div({'class': 'vcard'},
+                      xhtml.a({'class': 'n', 'href': up.get_absolute_url() },
+                              xhtml.span({'class': 'given-name'}, u.first_name),
+                              ' ',
+                              xhtml.span({'class': 'family-name'}, u.last_name)),
+                      ' (', xhtml.a({ 'href': u.get_absolute_url() },
+                                    xhtml.span({'class': 'nickname'}, u.username)), ')',
+                      '<', xhtml.a({ 'href': 'mailto:%s' % u.email},
+                                   xhtml.span({'class': 'email'}, u.email)), '>'
+                      )
+
+    if up.icon is not None:
+        hcard += xhtml.img({'class': 'picture', 'src': up.icon.get_picture_url('icon')})
+
+    return hcard

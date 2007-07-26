@@ -9,6 +9,7 @@ from imagestore.atomfeed import AtomEntry
 from imagestore.picture import PictureFeed
 import imagestore.urn as urn
 from imagestore.namespace import xhtml, atom
+import imagestore.microformat as microformat
 
 class UserProfile(models.Model):
     user = models.ForeignKey(User, unique=True, core=True,
@@ -19,7 +20,7 @@ class UserProfile(models.Model):
 
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.views.user', (self.user.username,))
+        return ('imagestore.user.user', (self.user.username,))
 
     def get_images_url(self):
         return self.get_absolute_url() + 'images/'
@@ -31,19 +32,9 @@ class UserEntry(AtomEntry):
     def render(self):
         u = self.urluser
         up = u.get_profile()
-        hcard = xhtml.div({'class': 'vcard'},
-                          xhtml.a({'class': 'n', 'href': up.get_absolute_url() },
-                                     xhtml.span({'class': 'given-name'}, u.first_name),
-                                     ' ',
-                                     xhtml.span({'class': 'family-name'}, u.last_name)),
-                          ' (', xhtml.a({ 'href': u.get_absolute_url() },
-                                        xhtml.span({'class': 'nickname'}, u.username)), ')',
-                          xhtml.span({'class': 'email'}, u.email))
+        hcard = microformat.hcard(u)
 
-        if up.icon is not None:
-            hcard += xhtml.img({'class': 'picture', 'src': up.icon.get_picture_url('icon')})
-        
-        return atom.entry(atom.content({'type': 'xhtml'}, hcard),
+        return atom.entry(atom.content({'type': 'xhtml'}, xhtml.div(hcard)),
                           atom.link({'rel': 'images',
                                      'href': up.get_images_url()}),
                           [ atom.link({'rel': 'friend',
@@ -56,9 +47,21 @@ class UserEntry(AtomEntry):
 urn.register('user',
              lambda urn: User.objects.get(id=int(urn[0])).get_profile())
 
+user = UserEntry()
+
 urlpatterns = patterns('',
-                       ('^$', 'imagestore.views.user'),
-                       ('image/', include('imagestore.picture')),
+                       ('^$',           user),
+                       ('image/',       include('imagestore.picture')),
+                       ('camera/',      include('imagestore.camera')),
                        )
+
+def setup():
+    # Make sure everyone has a userprofile
+    # XXX how to hook user creation?
+    for u in User.objects.all():
+        if u.userprofile_set.count() == 0:
+            u.userprofile_set.create()
+
+setup()
 
 __all__ = [ 'User', 'UserProfile', 'UserEntry' ]

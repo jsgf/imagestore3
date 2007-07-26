@@ -3,9 +3,13 @@ from __future__ import absolute_import
 import string
 
 from django.db import models
+from django.db.models import permalink
 from django.contrib.auth.models import User
+from django.conf.urls.defaults import patterns, include
 
 from imagestore.tag import Tag
+from imagestore.atomfeed import AtomFeed, AtomEntry
+from imagestore.namespace import atom, xhtml
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -16,16 +20,42 @@ class Camera(models.Model):
     serial = models.CharField(maxlength=128, blank=True)
 
     def __str__(self):
-        return 'Camera %s' % self.nickname
+        return '%s' % self.nickname
 
+    @permalink
     def get_absolute_url(self):
-        return '%scamera/%s/' % (self.owner.get_absolute_url(), self.nickname)
+        return ('imagestore.camera.camera',
+                (self.owner.username, self.nickname),
+                { 'camnick': self.nickname, 'user': self.owner.username })
 
     class Meta:
         unique_together=(('owner', 'nickname'),)
 
     class Admin:
         pass
+
+class CameraFeed(AtomFeed):
+    def __init__(self):
+        AtomFeed.__init__(self)
+        
+    def entries(self, **kwargs):
+        return [ CameraEntry(c) for c in self.urluser.camera_set.all() ]
+
+class CameraEntry(AtomEntry):
+    def __init__(self, camera = None):
+        AtomEntry.__init__(self)
+        if camera:
+            self.camera = camera
+        
+    def render(self):
+        c = self.camera
+        
+        return atom.entry(atom.title('%s - %s' % (c.nickname, c.model)),
+                          atom.content({ 'type': 'xhtml' },
+                                       xhtml.div(xhtml.p('%d pictures taken' %
+                                                         c.picture_set.count()))
+                                       )
+                          )
 
 def get_camera(owner, exif):
     try:
@@ -61,9 +91,21 @@ class CameraTags(models.Model):
     tags applied to the Camera covering that date will be implicitly
     applied to that picture."""
     
-    camera = models.ForeignKey(Camera)
-    start = models.DateTimeField()
-    end = models.DateTimeField()
+    camera = models.ForeignKey(Camera, edit_inline=models.STACKED)
+    start = models.DateTimeField(db_index=True, core=True)
+    end = models.DateTimeField(core=True)
     tags = models.ManyToManyField(Tag)
 
+    class Meta:
+        ordering = [ 'start' ]
+
 __all__ = [ 'Camera', 'get_camera', 'CameraTags' ]
+
+camerafeed      = CameraFeed()
+camera          = CameraEntry()
+
+urlpatterns = \
+  patterns('',
+           ('^$',                               camerafeed),
+           ('^(?P<camnick>[a-zA-Z0-9_-]+)/',    camera),
+           )

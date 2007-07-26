@@ -12,11 +12,15 @@ from imagestore.namespace import atom, xhtml, opensearch
 class AtomFeed(RestBase):
     __slots__ = [ 'title', 'subtitle', 'uri' ]
 
-    def __init__(self, title, subtitle=''):
+    def __init__(self):
         RestBase.__init__(self)
-        self.title = title
-        self.subtitle = subtitle
 
+    def title(self):
+        return ''
+
+    def subtitle(self):
+        return ''
+    
     def methods(self):
         return [ 'GET', 'HEAD', 'POST' ]
     
@@ -31,8 +35,8 @@ class AtomFeed(RestBase):
 
         feed = atom.feed(self.preamble(),
                          opensearch.totalResults('%d' % len(entries)),
-                         atom.title(self.title),
-                         atom.subtitle(self.subtitle),
+                         atom.title(self.title()),
+                         atom.subtitle(self.subtitle()),
                          atom.link({'ref': 'self', 'href': self.uri}),
                          [ e.render() for e in entries ])
 

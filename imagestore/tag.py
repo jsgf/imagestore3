@@ -3,12 +3,14 @@ from __future__ import absolute_import
 from django.db import models
 
 import string, re
+from imagestore.namespace import xhtml
 
 tagroot = None
 
 class Tag(models.Model):
     word = models.CharField(maxlength=50, db_index=True)
     scope = models.ForeignKey('self', db_index=True)
+    description = models.CharField(maxlength=100, null=True)
 
     # Tags may be geo-located
     #lat = models.FloatField(null=True)
@@ -29,6 +31,12 @@ class Tag(models.Model):
             ret = self.scope.canonical() + ret
         return ret
 
+    def render(self):
+        if self.description is not None:
+            return xhtml.abbr({'title': self.canonical()}, self.description)
+        else:
+            return self.canonical()
+        
     def is_more_specific(self, other):
         " Return true if this tag is more specific than other "
 
@@ -72,6 +80,9 @@ class Tag(models.Model):
     
     class Meta:
         unique_together=(('scope', 'word'),)
+
+    class Admin:
+        pass
 
 def tagroot_setup():
     (root, created) = Tag.objects.get_or_create(word='')
