@@ -88,6 +88,9 @@
 # 15-FEB-04 CEC Finally fixed bit shift warning by converting Y to 0L.
 #
 
+from datetime import datetime
+import types
+
 # field type descriptions as (length, abbreviation, full name) tuples
 FIELD_TYPES=(
     (0, 'X',  'Proprietary'), # no such type
@@ -102,6 +105,9 @@ FIELD_TYPES=(
     (4, 'SL', 'Signed Long'),
     (8, 'SR', 'Signed Ratio')
     )
+
+def convert_datetime(value):
+    return datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
 
 # dictionary of main EXIF tag names
 # first element of tuple is tag name, optional second element is
@@ -141,7 +147,7 @@ EXIF_TAGS={
               3: 'Pixels/Centimeter'}),
     0x012D: ('TransferFunction', ),
     0x0131: ('Software', ),
-    0x0132: ('DateTime', ),
+    0x0132: ('DateTime', convert_datetime),
     0x013B: ('Artist', ),
     0x013E: ('WhitePoint', ),
     0x013F: ('PrimaryChromaticities', ),
@@ -178,8 +184,8 @@ EXIF_TAGS={
     0x8828: ('OECF', ),
     # print as string
     0x9000: ('ExifVersion', lambda x: ''.join(map(chr, x))),
-    0x9003: ('DateTimeOriginal', ),
-    0x9004: ('DateTimeDigitized', ),
+    0x9003: ('DateTimeOriginal', convert_datetime),
+    0x9004: ('DateTimeDigitized', convert_datetime),
     0x9101: ('ComponentsConfiguration',
              {0: '',
               1: 'Y',
@@ -308,12 +314,21 @@ MAKERNOTE_NIKON_NEWER_TAGS={
     0x0009: ('AutoFlashMode', ),
     0x000B: ('WhiteBalanceBias', ),
     0x000C: ('WhiteBalanceRBCoeff', ),
+    0x000D: ('ProgramShift', ),
+    0x000E: ('ExposureDiff', ),
     0x000F: ('ISOSelection', ),
+    0x0010: ('DataDump', ),
+    0x0011: ('Preview', ),
     0x0012: ('FlashCompensation', ),
     0x0013: ('ISOSpeedRequested', ),
     0x0016: ('PhotoCornerCoordinates', ),
     0x0018: ('FlashBracketCompensationApplied', ),
     0x0019: ('AEBracketCompensationApplied', ),
+    0x001A: ('ImageProcessing', ),
+    0x001B: ('CropHiSpeed', ),
+    0x001D: ('SerialNumber', ),
+    0x001E: ('ColorSpace', ),
+    
     0x0080: ('ImageAdjustment', ),
     0x0081: ('ToneCompensation', ),
     0x0082: ('AuxiliaryLens', ),
@@ -321,6 +336,7 @@ MAKERNOTE_NIKON_NEWER_TAGS={
     0x0084: ('LensMinMaxFocalMaxAperture', ),
     0x0085: ('ManualFocusDistance', ),
     0x0086: ('DigitalZoomFactor', ),
+    0x0087: ('FlashMode', ),
     0x0088: ('AFFocusPosition',
              {0x0000: 'Center',
               0x0100: 'Top',
@@ -337,8 +353,11 @@ MAKERNOTE_NIKON_NEWER_TAGS={
               0x40: 'Single frame, white balance bracketing',
               0x41: 'Continuous, white balance bracketing',
               0x42: 'Timer, white balance bracketing'}),
+    0x008A: ('AutoBracketRelease', ),
+    0x008B: ('LensFStops', ),
+    0x008C: ('ToneCurve', ),
     0x008D: ('ColorMode', ),
-    0x008F: ('SceneMode?', ),
+    0x008F: ('SceneMode', ),
     0x0090: ('LightingType', ),
     0x0092: ('HueAdjustment', ),
     0x0094: ('Saturation',
@@ -349,11 +368,30 @@ MAKERNOTE_NIKON_NEWER_TAGS={
               1:  '1',
               2:  '2'}),
     0x0095: ('NoiseReduction', ),
+    0x0096: ('CompressionCurve', ),
+    0x0097: ('ColorBalance2', ),
+    0x0098: ('LensData', ),
+    0x0099: ('NEFThumbnailSize', ),
+    0x009A: ('SensorPixelSize', ),
+
+    0x00A0: ('CameraSerialNumber', ),
+    0x00A2: ('ImageDataSize', ),
+    0x00A5: ('ImageCount', ),
+    0x00A6: ('DeleteImageCount', ),
     0x00A7: ('TotalShutterReleases', ),
     0x00A9: ('ImageOptimization', ),
     0x00AA: ('Saturation', ),
     0x00AB: ('DigitalVariProgram', ),
-    0x0010: ('DataDump', )
+    0x00AC: ('ImageStabilization', ),
+    0x00AD: ('AFResponse', ),
+
+    0x00B1: ('HighISONoiseReduction', ),
+    0x00B3: ('BWFilter', ),
+    
+    0x0E00: ('PrintIM', ),
+    0x0E01: ('CaptureData', ),
+    0x0E09: ('CaptureVersion', ),
+    0x0E0E: ('CaptureOffsets', ),
     }
 
 MAKERNOTE_NIKON_OLDER_TAGS={
@@ -887,7 +925,7 @@ class EXIF_header(object):
                         printable=''
                         for i in values:
                             # use lookup table for this tag
-                            printable+=tag_entry[1].get(i, repr(i))
+                            printable += tag_entry[1].get(i, repr(i))
             self.tags[ifd_name+' '+tag_name]=IFD_Tag(printable, tag,
                                                      field_type,
                                                      values, field_offset,

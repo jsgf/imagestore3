@@ -1,66 +1,74 @@
+from __future__ import absolute_import
+
 import sha, md5
 from django.db import models
 
+class MediaChunk(models.Model):
+    media = models.ForeignKey('Media', related_name='mediachunks')
+    data = models.TextField(blank=True)
+    sequence = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = [ 'sequence' ]
+        unique_together = (('id', 'sequence'),)
+
 class Media(models.Model):
     _chunksize = 64 * 1024
-    
-    sha1hash = models.CharField(maxlength=40, db_index=True)
-    sequence = models.PositiveIntegerField()
-    data = models.TextField(blank=True)
 
-    def chunks(self):
-        """A generator for all the chunks corresponding to a particular hash."""
-        for c in Media.objects.filter(sha1hash=self.sha1hash):
-            yield c.data
+    key = models.CharField(maxlength=128, db_index=True)
+    sha1hash = models.CharField(maxlength=40, db_index=True)
+    size = models.PositiveIntegerField()
+    cache = models.BooleanField("temporary cache value")
+    update_time = models.DateTimeField(auto_now=True)
 
     def verify(self):
         """Verify that the chunks for a particular hash are all present and correct"""
         sha1 = sha.new()
         
-        for d in self.chunks():
-            sha1.update(d)
+        for d in self.chunks.all():
+            sha1.update(d.data)
 
         return sha1.digest().encode('hex') == self.sha1hash
 
-    @staticmethod
-    def get(hash):
-        return Media.objects.get(sha1hash=hash, sequence=0)
+    def chunks(self):
+        for c in self.mediachunks.all():
+            yield c.data
 
     @staticmethod
-    def deletechunks(hash):
-        """Delete all media chunks for a particular hash"""
-        for m in Media.objects.filter(sha1hash=hash):
-            m.delete()
-
+    def get(key):
+        try:
+            ret = Media.objects.get(key=key)
+        except Media.DoesNotExist:
+            ret = None
+        return ret
+    
     @staticmethod
-    def store(data, hash=None):
+    def store(key, data, sha1hash=None, cache=False):
         """Store a piece of data as media chunks"""
-        if hash is None:
-            sha1 = sha.new(data)
-            hash = sha1.digest().encode('hex')
 
-        old = Media.objects.filter(sha1hash=hash)
-        if old.count() != 0:
-            old = old[0]
-            if old.verify():
-                return old
+        old = Media.get(key)
+        if old is not None:
+            if not old.verify():
+                old.chunks.delete()
             else:
-                Media.deletechunks(hash)
+                return old
+            
+        if sha1hash is None:
+            sha1 = sha.new(data)
+            sha1hash = sha1.digest().encode('hex')
 
-        media = None
-        order = 0
+        media = Media(key=key, sha1hash=sha1hash, cache=cache, size=len(data))
+        media.save()
+        
+        seq = 0
         while len(data) > 0:
-            m = Media(data=data[:Media._chunksize], sha1hash=hash, sequence=order)
+            print 'storing key=%s seq=%d' % (key, seq)
+            m = MediaChunk(media=media, sequence=seq,
+                           data=data[:Media._chunksize])
             m.save()
             data = data[Media._chunksize:]
-            order += 1
-            if media is None:
-                media = m
+            seq += 1
 
         return media
-    
-    class Meta:
-        ordering = [ 'sequence' ]
-        unique_together = (('sha1hash', 'sequence'),)
 
-
+__all__ = [ 'Media' ]

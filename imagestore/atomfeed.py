@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 from cStringIO import StringIO
 from xml.etree.cElementTree import ElementTree
 
@@ -21,15 +23,13 @@ class AtomFeed(RestBase):
     def entries(self):
         return []
 
+    def preamble(self):
+        return []
+
     def render(self):
         entries = self.entries()
-        upload = xhtml.form({'method': 'post', 'action': ''},
-                            xhtml.input({'type': 'file', 'name': 'image',
-                                         'accept': 'image/*'}),
-                            xhtml.input({'type': 'text', 'name': 'title'}),
-                            xhtml.input({'type': 'text', 'name': 'tags'}),
-                            xhtml.input({'type': 'submit', 'name': 'upload'}))
-        feed = atom.feed(upload,
+
+        feed = atom.feed(self.preamble(),
                          opensearch.totalResults('%d' % len(entries)),
                          atom.title(self.title),
                          atom.subtitle(self.subtitle),
@@ -51,7 +51,7 @@ class AtomFeed(RestBase):
 
 class AtomEntry(RestBase):
     def __init__(self):
-        pass
+        RestBase.__init__(self)
 
     def render(self):
         return atom.entry()
@@ -74,7 +74,7 @@ def atomperson(self):
     return [ atom.name('%s %s' % (self.first_name, self.last_name)),
              atom.email(self.email),
              atom.username(self.username), 
-             atom.uri('urn:user:%d' % self.id) ]
+             atom.id('urn:user:%d' % self.id) ]
 
 class HttpResponseConflict(HttpResponse):
     def __init__(self, *args, **kwargs):

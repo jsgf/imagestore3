@@ -1,10 +1,14 @@
+from __future__ import absolute_import
+
 from django.db import models
 
 import string, re
 
+tagroot = None
+
 class Tag(models.Model):
     word = models.CharField(maxlength=50, db_index=True)
-    scope = models.ForeignKey('self', null=True, db_index=True)
+    scope = models.ForeignKey('self', db_index=True)
 
     # Tags may be geo-located
     #lat = models.FloatField(null=True)
@@ -15,18 +19,18 @@ class Tag(models.Model):
 
     def depth(self):
         depth = 1
-        if self.scope is not None:
+        if self.scope != tagroot:
             depth += self.scope.depth()
         return depth
 
     def canonical(self):
         ret = ':%s' % self.word
-        if self.scope is not None:
+        if self.scope != tagroot:
             ret = self.scope.canonical() + ret
         return ret
 
     def is_more_specific(self, other):
-        " Return true if this tag is more specifc than other "
+        " Return true if this tag is more specific than other "
 
         tag = self
         while tag is not None:
@@ -53,18 +57,15 @@ class Tag(models.Model):
 
     @staticmethod
     def tag(fulltag):
+        assert tagroot is not None
+        
         # canonicalize
-        fulltag = string.strip(fulltag, ':')
-        fulltag = re.sub(':+', ':', fulltag)
+        fulltag = string.strip(fulltag, u' :')
 
-        tags = string.split(fulltag, ':')
-        scope = None
+        tags = re.split(':+', fulltag)
+        scope = tagroot
         for t in tags:
-            if scope is None:
-                # "scope = NULL" doesn't do what you'd (I'd) expect
-                tag, created = Tag.objects.get_or_create(scope__isnull=True, word=t)
-            else:
-                tag, created = Tag.objects.get_or_create(scope=scope, word=t)
+            tag, created = Tag.objects.get_or_create(scope=scope, word=t)
             scope = tag
 
         return scope
@@ -72,3 +73,18 @@ class Tag(models.Model):
     class Meta:
         unique_together=(('scope', 'word'),)
 
+def tagroot_setup():
+    (root, created) = Tag.objects.get_or_create(word='')
+
+    root.scope = root
+    root.save()
+
+    for t in Tag.objects.filter(scope__isnull=True):
+        t.scope = root
+        t.save()
+
+    return root
+
+tagroot = tagroot_setup()
+
+__all__ = [ 'Tag' ]

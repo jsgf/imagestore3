@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 from django.http import HttpResponseNotAllowed, HttpResponseNotFound
 from django.views.decorators.cache import cache_control
 from django.contrib.auth.models import User
@@ -8,10 +10,10 @@ class RestBase(object):
     implementation of HEAD based on GET; it need only be replaced if
     GET does way too much work to satisfy a HEAD request."""
 
-    __slots__ = [ 'user', 'request', 'args', 'kwargs' ]
+    __slots__ = [ 'urluser', 'request', 'args', 'kwargs' ]
     
     def __init__(self):
-        self.user = None
+        self.urluser = None
 
     def methods(self):
         return ['GET', 'HEAD' ]
@@ -47,7 +49,18 @@ class RestBase(object):
 
         if 'user' in kwargs:
             try:
-                self.user = User.objects.get(username=kwargs['user'])
+                self.urluser = User.objects.get(username=kwargs['user'])
             except User.DoesNotExist:
-                return HttpResponseNotFound('User"%s" not found' % kwargs['user'])
+                return HttpResponseNotFound('User "%s" not found' % kwargs['user'])
+
+        if 'picid' in kwargs:
+            from imagestore.picture import Picture
+            try:
+                # XXX filter visibility
+                self.picture = Picture.objects.get(pk=int(kwargs['picid']))
+            except Picture.DoesNotExist:
+                return HttpResponseNotFound('Picture %d not found' % kwargs['picid'])
+            
         return method(self, *args, **kwargs)
+
+__all__ = [ 'RestBase' ]
