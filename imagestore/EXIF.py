@@ -1102,6 +1102,7 @@ class EXIF_header(object):
 def process_file(file, debug=0):
     # determine whether it's a JPEG or TIFF
     data=file.read(12)
+    fake_exif=0
     if data[0:4] in ['II*\x00', 'MM\x00*']:
         # it's a TIFF file
         file.seek(0)

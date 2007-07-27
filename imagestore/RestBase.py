@@ -59,14 +59,14 @@ class RestBase(object):
                 # XXX filter visibility
                 self.picture = Picture.objects.get(pk=int(kwargs['picid']))
             except Picture.DoesNotExist:
-                return HttpResponseNotFound('Picture %d not found' % kwargs['picid'])
+                return HttpResponseNotFound('Picture %s not found' % kwargs['picid'])
 
         if 'camnick' in kwargs:
             from imagestore.camera import Camera
             try:
                 self.camera = Camera.objects.get(nickname = kwargs['camnick'])
             except Camera.DoesNotExist:
-                return HttpResponseNotFound('Camera %d not found' % kwargs['camnick'])
+                return HttpResponseNotFound('Camera %s not found' % kwargs['camnick'])
                 
         return method(self, *args, **kwargs)
 

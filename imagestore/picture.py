@@ -27,11 +27,18 @@ import imagestore.microformat as microformat
 from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson, HttpResponseConflict
 from imagestore.namespace import atom, imst, xhtml
 
+class NotDeletedPictures(models.Manager):
+    def get_query_set(self):
+        return super(NotDeletedPictures, self).get_query_set().filter(deleted=False)
+
 class Picture(models.Model):
     PUBLIC=0
     RESTRICTED=1
     PRIVATE=2
-    
+
+    objects = NotDeletedPictures()
+    all_objects = models.Manager()
+
     sha1hash = models.CharField("unique sha1 hash of picture",
                                 maxlength=40, db_index=True, unique=True, editable=False)
     mimetype = models.CharField("mime type for picture", maxlength=40, editable=False)
@@ -43,11 +50,17 @@ class Picture(models.Model):
     derived_from = models.ForeignKey('self', null=True, related_name='derivatives')
 
     def mediakey(self, variant='orig'):
-        return '%d/%s' % (self.id, variant)
+        if variant == 'orig':
+            return '%d/%s' % (self.id, variant)
+        else:
+            return '%d/%s.%d' % (self.id, variant, self.orientation)
     
     def media(self, variant='orig'):
         return Media.get(self.mediakey(variant))
     
+    def image(self, size):
+        return image.ImageProcessor(self, size)
+
     width = models.PositiveIntegerField(editable=False)
     height = models.PositiveIntegerField(editable=False)
     orientation = models.PositiveIntegerField()
@@ -61,6 +74,9 @@ class Picture(models.Model):
     original_ref = models.CharField("external reference for picture",
                                     maxlength=100, blank=True)
 
+    deleted = models.BooleanField('picture is logically deleted',
+                                  editable=True, default=False)
+    
     camera = models.ForeignKey(Camera, null=True,
                                verbose_name="camera which took this picture")
     owner = models.ForeignKey(User, related_name='owned_pics')
@@ -82,7 +98,7 @@ class Picture(models.Model):
         return '%d: %s' % (self.id, self.title)
 
     class Meta:
-        ordering = [ 'created_time' ]
+        ordering = [ '-created_time' ]
         get_latest_by = [ '-created_time' ]
 
     class Admin:
@@ -97,9 +113,9 @@ class Picture(models.Model):
     def get_absolute_url(self):
         return ('imagestore.picture.picture', str(self.id), { 'picid': str(self.id) })
 
-    def get_picture_url(self, size='thumbnail'):
+    def get_picture_url(self, size='thumb'):
         try:
-            ext = '.%s' % image.extensions[self.mimetype]
+            ext = '.%s' % self.image(size).extension
         except KeyError:
             ext = ''
         return '%spic/%s%s' % (self.get_absolute_url(), size, ext)
@@ -107,12 +123,8 @@ class Picture(models.Model):
     def get_comment_url(self):
         return '%scomment/' % self.get_absolute_url()
 
-    def picture_chunks(self, variant='orig'):
+    def chunks(self, variant='orig'):
         return self.media(variant).chunks()
-
-    def get_thumbnail(self):
-        m=Media.get(self.mediakey('thumb.%d' % self.orientation))
-        return string.join(m.chunks(), '')
 
     def get_urn(self):
         return 'urn:picture:%d' % self.id
@@ -120,29 +132,48 @@ class Picture(models.Model):
     urn.register('picture', lambda urn: Picture.objects.get(id=int(urn[0])))
 
     def exif(self):
-        img = string.join([ v for v in self.picture_chunks() ], '')
+        img = string.join([ v for v in self.chunks() ], '')
         return EXIF.process_file(StringIO(img))
 
+    def tags_query(self):
+        ''' Returns Tag query to select this picture's tags. '''
+        return Q(picture = self)
+
+    def camera_tags_query(self):
+        ''' Returns Tag query to return
+            this's picture's camera tags. '''
+        return (Q(cameratags__camera = self.camera) &
+                Q(cameratags__start__lte = self.created_time) &
+                Q(cameratags__end__gte = self.created_time))
+
     def camera_tags(self):
-        if self.camera is None:
-            return []
-
-        s = set()
-        for ct in self.camera.cameratags_set.filter(start__lte = self.created_time,
-                                                    end__gte = self.created_time):
-            s = s | set(ct.tags.all())
-
-        ret = list(s)
-        ret.sort(lambda a,b: cmp(a.id, b.id))
-        return ret
+        """
+        Return list of tags conferred on this picture by the camera it
+        was taken with.
+        """
+        ct = Tag.objects.filter(self.camera_tags_query())
+        ct = ct.distinct().order_by('id')
+        
+        return ct
 
     def effective_tags(self):
-        ret = list(set(self.tags.all()) | set(self.camera_tags()))
-        ret.sort(lambda a,b: cmp(a.id, b.id))
-        return ret
+        """
+        Return the list of all tags applied to this picture, directly
+        and indirectly.
+        """
+        if False:
+            # Doesn't work: Django bug?
+            t = self.camera_tags_query() | self.tags_query()
+            return Tag.objects.filter(t).distinct().order_by('id')
+        else:
+            ret = list(set(self.tags.all()) | set(self.camera_tags()))
+            ret.sort(lambda a,b: cmp(a.id, b.id))
+            return ret
 
     @staticmethod
     def canon_tags(tags):
+        ''' Given a string containing ',' or ';' separated tags,
+        return a list of properly canonicalized tags '''
         if type(tags) is types.StringType:
             tags = [ t.strip().lower() for t in re.split(' *[,;]+ *', tags) ]
 
@@ -170,7 +201,14 @@ class PictureEntry(AtomEntry):
         p = self.picture
         assert p is not None
 
-        atomtags = [ atom.category({'term': tag.canonical() }) for tag in p.effective_tags() ]
+        def atomcat(t):
+            attr = { 'term': t.canonical() }
+            if t.description:
+                attr['label'] = t.description
+
+            return atom.category(attr)
+
+        atomtags = [ atomcat(tag) for tag in p.effective_tags() ]
         htmltags = xhtml.ul([ xhtml.li(tag.render()) for tag in p.effective_tags() ])
 
         photog = None
@@ -189,11 +227,13 @@ class PictureEntry(AtomEntry):
             derived_from = xhtml.p(xhtml.a({'href': p.derived_from.get_absolute_url()},
                                            'Derived from %d: %s' % (p.derived_from.id,
                                                                     p.derived_from.title)))
-            
+
+        size = 'tiny'
+        img = p.image(size)
         content = [ xhtml.a({'href': p.get_absolute_url()},
-                            xhtml.img({'src': p.get_picture_url('orig'),
-                                       'width': str(image.sizes['tiny'][0]),
-                                       'height': str(image.sizes['tiny'][1]),
+                            xhtml.img({'src': p.get_picture_url(size),
+                                       'width': str(img.dimensions()[0]),
+                                       'height': str(img.dimensions()[1]),
                                        'alt': p.title })),
                     xhtml.p('Owner:', microformat.hcard(p.owner)),
                     photog,
@@ -217,8 +257,8 @@ class PictureEntry(AtomEntry):
                          atom.title(p.title or 'untitled #%d' % p.id),
                          atom.author(atomperson(p.owner)),
                          atom.updated(atomtime(p.modified_time)),
-                         atom.published(atomtime(p.uploaded_time)),
-                         imst.created(atomtime(p.created_time)),
+                         atom.published(atomtime(p.created_time)),
+                         imst.uploaded(atomtime(p.uploaded_time)),
                          atomtags,
                          atom.link({'rel': 'comments', 'href': p.get_comment_url() }),
                          atom.link({'rel': 'self', 'href': p.get_absolute_url()}),
@@ -246,14 +286,14 @@ class PictureImage(RestBase):
         size = kwargs.get('size', 'orig')
         if size == '':
             size = 'orig'
-            
-        if size != 'orig' and size not in image.sizes:
-            return HttpResponseNotFound('image %d has no size "%s"' % (p.id, size))
-            
+
         m = p.media(size)
 
         if m is None:
-            return HttpResponseNotFound("Can't generate '%s'" % size)
+            (m, type) = p.image(size).generate()
+            
+        if m is None:
+            return HttpResponseNotFound('image %d has no size "%s"' % (p.id, size))
 
         return HttpResponse(m.chunks(), mimetype=p.mimetype)
         
@@ -277,11 +317,17 @@ class PictureFeed(AtomFeed):
     def preamble(self):
         return xhtml.form({'method': 'post', 'action': '',
                            'enctype': 'multipart/form-data'},
+                          xhtml.label({'for': 'up-image'}, 'Image'),
                           xhtml.input({'type': 'file', 'name': 'image',
-                                       'accept': 'image/*'}),
-                          xhtml.input({'type': 'text', 'name': 'title'}),
-                          xhtml.input({'type': 'text', 'name': 'tags'}),
-                          xhtml.input({'type': 'submit', 'name': 'upload'}))
+                                       'accept': 'image/*', 'id': 'up-image'}),
+                          xhtml.label({'for': 'up-title'}, 'Title'),
+                          xhtml.input({'type': 'text', 'name': 'title',
+                                       'id': 'up-image'}),
+                          xhtml.label({'for': 'up-tags'}, 'Tags'),
+                          xhtml.input({'type': 'text', 'name': 'tags',
+                                       'id': 'iup-tags'}),
+                          xhtml.input({'type': 'submit', 'name': 'upload',
+                                       'value': 'Upload'}))
 
     def entries(self, **kwargs):
         filter = self.filter(kwargs)
@@ -297,6 +343,7 @@ class PictureFeed(AtomFeed):
 
         data = file['content']
         type = file['content-type']
+        filename = file['filename']
         
         sha1 = sha.new()
         sha1.update(data)
@@ -314,7 +361,9 @@ class PictureFeed(AtomFeed):
 
         file = StringIO(data)
         p = image.importer(file, owner=self.urluser, title=title,
-                           sha1hash=hash, visibility=Picture.PUBLIC, mimetype=type)
+                           original_ref=filename,
+                           sha1hash=hash, visibility=Picture.PUBLIC,
+                           mimetype=type)
 
         if 'tags' in self.request.POST:
             p.add_tags(self.request.POST['tags'])

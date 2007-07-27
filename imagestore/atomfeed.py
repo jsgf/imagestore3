@@ -9,6 +9,9 @@ import ElementBuilder
 from imagestore.RestBase import RestBase
 from imagestore.namespace import atom, xhtml, opensearch
 
+#content_type = 'application/xml'
+content_type = 'application/atom+xml'
+
 class AtomFeed(RestBase):
     __slots__ = [ 'title', 'subtitle', 'uri' ]
 
@@ -51,7 +54,7 @@ class AtomFeed(RestBase):
         ElementTree(feed).write(out, 'utf-8')
         out.write('\n')
         
-        return HttpResponse(out.getvalue(), 'application/atom+xml')
+        return HttpResponse(out.getvalue(), content_type)
 
 class AtomEntry(RestBase):
     def __init__(self):
@@ -69,10 +72,10 @@ class AtomEntry(RestBase):
         ElementTree(feed).write(out, 'utf-8')
         out.write('\n')
         
-        return HttpResponse(out.getvalue(), 'application/atom+xml')
+        return HttpResponse(out.getvalue(), content_type)
 
 def atomtime(td):
-    return td.strftime('%Y-%m-%dT%H-%M-%SZ')
+    return td.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 def atomperson(self):
     return [ atom.name('%s %s' % (self.first_name, self.last_name)),
