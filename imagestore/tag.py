@@ -64,7 +64,7 @@ class Tag(models.Model):
         return ret
 
     @staticmethod
-    def tag(fulltag):
+    def tag(fulltag, create=False):
         assert tagroot is not None
         
         # canonicalize
@@ -73,7 +73,14 @@ class Tag(models.Model):
         tags = re.split(':+', fulltag)
         scope = tagroot
         for t in tags:
-            tag, created = Tag.objects.get_or_create(scope=scope, word=t)
+            if create:
+                tag, created = Tag.objects.get_or_create(scope=scope, word=t)
+            else:
+                try:
+                    tag = Tag.objects.get(scope=scope, word=t)
+                except Tag.DoesNotExist:
+                    return None
+                
             scope = tag
 
         return scope

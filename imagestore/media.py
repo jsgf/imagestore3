@@ -3,15 +3,6 @@ from __future__ import absolute_import
 import sha, md5
 from django.db import models
 
-class MediaChunk(models.Model):
-    media = models.ForeignKey('Media', related_name='mediachunks')
-    data = models.TextField(blank=True)
-    sequence = models.PositiveIntegerField()
-
-    class Meta:
-        ordering = [ 'sequence' ]
-        unique_together = (('id', 'sequence'),)
-
 class Media(models.Model):
     _chunksize = 64 * 1024
 
@@ -62,7 +53,7 @@ class Media(models.Model):
         
         seq = 0
         while len(data) > 0:
-            print 'storing key=%s seq=%d' % (key, seq)
+            #print 'storing key=%s seq=%d' % (key, seq)
             m = MediaChunk(media=media, sequence=seq,
                            data=data[:Media._chunksize])
             m.save()
@@ -70,5 +61,14 @@ class Media(models.Model):
             seq += 1
 
         return media
+
+class MediaChunk(models.Model):
+    media = models.ForeignKey(Media, related_name='mediachunks')
+    data = models.TextField(blank=True)
+    sequence = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = [ 'sequence' ]
+        unique_together = (('id', 'sequence'),)
 
 __all__ = [ 'Media' ]

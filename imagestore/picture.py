@@ -8,26 +8,49 @@ from datetime import datetime
 from xml.etree.cElementTree import ElementTree
 
 from django.db import models
-from django.db.models import Q, permalink
-from django.http import (HttpRequest, HttpResponse, HttpResponseForbidden, HttpResponseNotFound,
-                         Http404)
+from django.db.models import permalink
+from django.db.models.query import Q, QNot
+from django.http import (HttpRequest, HttpResponse,
+                         HttpResponseForbidden, HttpResponseNotFound, Http404)
 from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
+from django.core.exceptions import ObjectDoesNotExist
 
 from imagestore.media import Media
-from imagestore.camera import Camera
 from imagestore.tag import Tag
 from imagestore.RestBase import RestBase
 
-import imagestore.urn as urn
-import imagestore.EXIF as EXIF
-import imagestore.image as image
-import imagestore.microformat as microformat
+from imagestore import urn, EXIF, image, microformat
 
-from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson, HttpResponseConflict
+from imagestore.atomfeed import (AtomFeed, AtomEntry,
+                                 atomtime, atomperson,
+                                 HttpResponseConflict)
 from imagestore.namespace import atom, imst, xhtml
 
-class NotDeletedPictures(models.Manager):
+class FilteredPictures(models.Manager):
+    @staticmethod
+    def visibility_filter(user):
+        """ Returns a filter to limit the pictures visible
+            to a particular authenticated user """
+        vis = Q(visibility=Picture.PUBLIC)
+        
+        if user is not None:
+            if user.is_superuser:
+                vis = Q()
+            else:
+                up = user.get_profile()
+                vis = vis | (Q(visibility=Picture.RESTRICTED, owner__in=up.friends) |
+                             Q(visibility=Picture.PRIVATE, owner=user))
+
+        return vis
+
+    def vis_filter(self, authuser, *args, **kwargs):
+        return self.filter(self.visibility_filter(authuser), *args, **kwargs)
+
+    def vis_get(self, authuser, *args, **kwargs):
+        return self.get(self.visibility_filter(authuser), *args, **kwargs)
+
+class NotDeletedPictures(FilteredPictures):
     def get_query_set(self):
         return super(NotDeletedPictures, self).get_query_set().filter(deleted=False)
 
@@ -37,7 +60,11 @@ class Picture(models.Model):
     PRIVATE=2
 
     objects = NotDeletedPictures()
-    all_objects = models.Manager()
+    all_objects = FilteredPictures()
+
+    @staticmethod
+    def get(user, id):
+        return Picture.objects.vis_get(user, id=id)
 
     sha1hash = models.CharField("unique sha1 hash of picture",
                                 maxlength=40, db_index=True, unique=True, editable=False)
@@ -48,18 +75,6 @@ class Picture(models.Model):
     datasize = models.PositiveIntegerField("raw picture size in bytes", editable=False)
 
     derived_from = models.ForeignKey('self', null=True, related_name='derivatives')
-
-    def mediakey(self, variant='orig'):
-        if variant == 'orig':
-            return '%d/%s' % (self.id, variant)
-        else:
-            return '%d/%s.%d' % (self.id, variant, self.orientation)
-    
-    def media(self, variant='orig'):
-        return Media.get(self.mediakey(variant))
-    
-    def image(self, size):
-        return image.ImageProcessor(self, size)
 
     width = models.PositiveIntegerField(editable=False)
     height = models.PositiveIntegerField(editable=False)
@@ -77,7 +92,7 @@ class Picture(models.Model):
     deleted = models.BooleanField('picture is logically deleted',
                                   editable=True, default=False)
     
-    camera = models.ForeignKey(Camera, null=True,
+    camera = models.ForeignKey('Camera', null=True,
                                verbose_name="camera which took this picture")
     owner = models.ForeignKey(User, related_name='owned_pics')
     visibility = models.PositiveSmallIntegerField("visibility rights of this picture",
@@ -93,6 +108,18 @@ class Picture(models.Model):
     copyright = models.CharField(maxlength=100, blank=True)
 
     tags = models.ManyToManyField(Tag, verbose_name='tags')
+
+    def mediakey(self, variant='orig'):
+        if variant == 'orig':
+            return '%d/%s' % (self.id, variant)
+        else:
+            return '%d/%s.%d' % (self.id, variant, self.orientation)
+    
+    def media(self, variant='orig'):
+        return Media.get(self.mediakey(variant))
+    
+    def image(self, size):
+        return image.ImageProcessor(self, size)
 
     def __str__(self):
         return '%d: %s' % (self.id, self.title)
@@ -129,7 +156,8 @@ class Picture(models.Model):
     def get_urn(self):
         return 'urn:picture:%d' % self.id
 
-    urn.register('picture', lambda urn: Picture.objects.get(id=int(urn[0])))
+    # XXX the user here doesn't really matter, since this is just a redirection service
+    urn.register('picture', lambda urn: Picture.get(user=None, id=int(urn[0])))
 
     def exif(self):
         img = string.join([ v for v in self.chunks() ], '')
@@ -171,31 +199,46 @@ class Picture(models.Model):
             return ret
 
     @staticmethod
-    def canon_tags(tags):
+    def canon_tags(tags, create=False):
         ''' Given a string containing ',' or ';' separated tags,
         return a list of properly canonicalized tags '''
         if type(tags) is types.StringType:
             tags = [ t.strip().lower() for t in re.split(' *[,;]+ *', tags) ]
 
-        return [ type(t) is types.StringType and Tag.tag(t) or t
-                 for t in tags ]
+        return [ type(t) is types.StringType and Tag.tag(t, create) or t
+                 for t in tags if t is not None ]
                 
     def add_tags(self, tags):
-        for t in self.canon_tags(tags):
+        for t in self.canon_tags(tags, create=True):
             self.tags.add(t)
 
     def del_tags(self, tags):
-        for t in self.canon_tags(tags):
+        for t in self.canon_tags(tags, create=False):
             self.tags.remove(t)
 
+def get_url_picture(authuser, kwargs):
+    id = kwargs.get('picid', None)
+    if id is None:
+        return None
+
+    return Picture.get(authuser, int(id))
+
 class PictureEntry(AtomEntry):
+    __slots__ = [ 'picture', 'urluser' ]
+    
     def __init__(self, p = None):
         AtomEntry.__init__(self)
         if p is not None:
             self.picture = p
 
-        if self.urluser is not None and self.urluser != p.owner:
-            raise Http404
+    def urlparams(self, kwargs):
+        from imagestore.user import get_url_user
+        
+        self.picture = get_url_picture(self.authuser, kwargs)
+        self.urluser = get_url_user(kwargs)
+
+    def get_last_modified(self):
+        return self.picture.modified_time
 
     def render(self):
         p = self.picture
@@ -211,18 +254,18 @@ class PictureEntry(AtomEntry):
         atomtags = [ atomcat(tag) for tag in p.effective_tags() ]
         htmltags = xhtml.ul([ xhtml.li(tag.render()) for tag in p.effective_tags() ])
 
-        photog = None
+        photog = ''
         if p.photographer is not None:
             photog = xhtml.p('Photographer:', microformat.hcard(p.photographer))
 
-        html_derivatives = None
+        html_derivatives = ''
         if p.derivatives.count() != 0:
             html_derivatives = xhtml.p('Derivatives:',
                                        xhtml.ul([ xhtml.li(xhtml.a({'href': deriv.get_absolute_url() },
                                                                    '%d: %s' % (deriv.id, deriv.title)))
                                                   for deriv in p.derivatives.all() ]))
 
-        derived_from = None
+        derived_from = []
         if p.derived_from is not None:
             derived_from = xhtml.p(xhtml.a({'href': p.derived_from.get_absolute_url()},
                                            'Derived from %d: %s' % (p.derived_from.id,
@@ -230,23 +273,28 @@ class PictureEntry(AtomEntry):
 
         size = 'tiny'
         img = p.image(size)
-        content = [ xhtml.a({'href': p.get_absolute_url()},
-                            xhtml.img({'src': p.get_picture_url(size),
-                                       'width': str(img.dimensions()[0]),
-                                       'height': str(img.dimensions()[1]),
-                                       'alt': p.title })),
-                    xhtml.p('Owner:', microformat.hcard(p.owner)),
-                    photog,
-                    derived_from,
-                    html_derivatives,
-                    xhtml.span('Taken with: ',
-                               xhtml.a({'href': p.camera.get_absolute_url()},
-                                       p.camera.nickname)),
-                    xhtml.p('Tags:', htmltags),
-                    xhtml.a({'href': p.get_comment_url()},
-                            '%d comments' % p.comment_set.count()) ]
-
-        content = [ c for c in content if c is not None ]
+        (width, height) = img.dimensions()
+        
+        content = [ xhtml.div({'class': 'image' },
+                              xhtml.a({'href': p.get_absolute_url()},
+                                      xhtml.img({'src': p.get_picture_url(size),
+                                                 'width': str(width),
+                                                 'height': str(height),
+                                                 'alt': p.title }))),
+                    xhtml.div({'class': 'metadata'},
+                              xhtml.p({'class': 'owner' },
+                                      'Owner:', microformat.hcard(p.owner)),
+                              photog,
+                              derived_from,
+                              html_derivatives,
+                              xhtml.span({ 'class': 'camera' },
+                                         'Taken with: ',
+                                         xhtml.a({'href': p.camera.get_absolute_url()},
+                                                 p.camera.nickname)),
+                              xhtml.p({'class': 'tags'},
+                                      'Tags:', htmltags),
+                              xhtml.a({'href': p.get_comment_url()},
+                                      '%d comments' % p.comment_set.count())) ]
 
         related = [ atom.link({'rel': 'related',
                                'href': deriv.get_absolute_url(),
@@ -271,6 +319,17 @@ class PictureEntry(AtomEntry):
         return ret
 
 class PictureExif(RestBase):
+    __slots__ = [ 'picture' ]
+    
+    def urlparams(self, kwargs):
+        self.picture = get_url_picture(self.authuser, kwargs)
+        
+    def get_last_modified(self):
+        return self.picture.modified_time
+
+    def get_Etag(self):
+        return '%s.exif' % self.picture.sha1hash
+
     def do_GET(self, *args, **kwargs):
         p = self.picture
 
@@ -280,33 +339,91 @@ class PictureExif(RestBase):
         return ret
 
 class PictureImage(RestBase):
+    """ Return the actual bits of a picture """
+
+    __slots__ = [ 'picture', 'size' ]
+    
+    def __init__(self):
+        self.size = None
+        super(PictureImage, self).__init__()
+
+    def urlparams(self, kwargs):
+        self.picture = get_url_picture(self.authuser, kwargs)
+    
+    def get_Etag(self):
+        if self.size is None:
+            return None
+        
+        m = self.picture.media(self.size)
+        ret = None
+        if m is not None:
+            ret = m.sha1hash
+        print '%d.%s = %s' % (self.picture.id, self.size, ret)
+        return ret
+
+    def get_content_length(self):
+        if self.size is None:
+            return None
+        
+        m = self.picture.media(self.size)
+        ret = None
+        if m is not None:
+            ret = m.size
+        print '%d.%s = %s' % (self.picture.id, self.size, ret)
+        return ret
+
+    def get_last_modified(self):
+        if self.size is None:
+            return None
+        
+        m = self.picture.media(self.size)
+        ret = None
+        if m is not None:
+            ret = m.update_time
+        print '%d.%s = %s' % (self.picture.id, self.size, ret)
+        return ret
+    
     def do_GET(self, *args, **kwargs):
         p = self.picture
 
         size = kwargs.get('size', 'orig')
+        
         if size == '':
             size = 'orig'
 
+        self.size = size
         m = p.media(size)
 
+        image = p.image(size)
+        
         if m is None:
-            (m, type) = p.image(size).generate()
+            (m, type) = image.generate()
             
         if m is None:
             return HttpResponseNotFound('image %d has no size "%s"' % (p.id, size))
 
-        return HttpResponse(m.chunks(), mimetype=p.mimetype)
+        ret = HttpResponse(m.chunks(), mimetype=p.mimetype)
+
+        # Make sure saving the image gives a useful filename
+        ret['Content-Disposition'] = ('inline; filename="%d-%s.%s"' %
+                                      (p.id, size, image.extension))
+
+        return ret
         
 class PictureFeed(AtomFeed):
-    def __init__(self):
-        AtomFeed.__init__(self)
+    __slots__ = [ 'urluser' ]
 
     def title(self):
         return 'Pictures'
 
-    def filter(self, kwargs):
-        filter = Q()
+    def urlparams(self, kwargs):
+        from imagestore.user import get_url_user
 
+        self.urluser = get_url_user(kwargs)
+
+    def filter(self):
+        filter = Q()
+        
         if self.urluser is not None:
             print 'filtering user %s' % self.urluser.username
             filter = filter & (Q(owner = self.urluser) |
@@ -315,6 +432,8 @@ class PictureFeed(AtomFeed):
         return filter
     
     def preamble(self):
+        """ Insert a little html form for as a guide for how to post
+            to this channel; it should really be a proper APP thing."""
         return xhtml.form({'method': 'post', 'action': '',
                            'enctype': 'multipart/form-data'},
                           xhtml.label({'for': 'up-image'}, 'Image'),
@@ -330,8 +449,9 @@ class PictureFeed(AtomFeed):
                                        'value': 'Upload'}))
 
     def entries(self, **kwargs):
-        filter = self.filter(kwargs)
-        return [ PictureEntry(p) for p in Picture.objects.filter(filter) ]
+        filter = self.filter()
+        res = Picture.objects.vis_filter(self.authuser, filter).distinct()
+        return [ PictureEntry(p) for p in res ]
     
     def do_POST(self, *args, **kwargs):
         file = self.request.FILES.get('image')
@@ -350,6 +470,7 @@ class PictureFeed(AtomFeed):
         hash = sha1.digest().encode('hex')
 
         try:
+            # unfiltered visibility OK here, since unique is unique
             p = Picture.objects.get(sha1hash = hash)
             return HttpResponseConflict('Image %d:%s already exists\n' %
                                         (p.id, p.sha1hash))
@@ -375,6 +496,272 @@ class PictureFeed(AtomFeed):
         
         return ret
 
+class SearchParser(object):
+    __slots__ = [ 'search', 'query' ]
+    
+    def __init__(self, search):
+        self.search = search
+        self.query = self.parse()
+
+    def parse(self):
+        """
+        Grammar for searches
+        
+        expr	: subExpr
+                ;
+
+        -- subsearches are separated by '/'; equivalent to & with
+        -- weak precedence; can't be grouped with ()
+        subExpr : catExpr ( '/' catExpr )*
+                ;
+
+        -- space-separated concatenated terms are anded together with
+        -- weak precedence; can be grouped with ()
+        catExpr : orExpr ( orExpr )*
+                ;
+
+        -- Terms can be ORed together with |
+        orExpr	: andExpr ( OR andExpr )*
+                ;
+
+        -- Strong precedence AND operator
+        andExpr	: notExpr ( AND notExpr )*
+                ;
+
+        -- Tight-binding negation
+        notExpr : ('-' | '~') term
+                | term
+                ;
+
+        term	: '(' catExpr ')'       -- grouping
+                | TAG                   -- match tag
+                | QUALTAG               -- match qualified tag
+                | ID                    -- match picture id
+                | VIS                   -- match visibility
+                | OWNER                 -- match owner
+                | PHOTOG                -- match photographer
+                | CAMERA                -- match camera
+                ;
+
+        ID      := '[0-9]+'
+        SEP     := '/'+
+        AND     := ('+' | '&')+
+        OR      := '|'+
+
+        OWNER   := 'owner:' user
+        PHOTOG  := 'photog:' user
+        CAMERA  := 'camera:' cameranick
+        VIS     := 'vis:' ('public' | 'restricted' | 'private')
+
+        TODO: time/date range
+        
+        Tags can take several forms:
+                foo             simple tag
+                "foo bar"       tag with spaces
+                :foo:bar        qualified tag
+                ":foo:bar blat" qualified tag with spaces
+        """
+
+        # Group "v" contains the interesting token value; even
+        #       uninteresting tokens have one for consistency
+        # Group "q" is used for quote matching around tags
+        TOK_owner       = re.compile(r'owner:(?P<v>[a-z][a-z0-9_-]+)', re.I | re.U)
+        TOK_photog      = re.compile(r'photog:(?P<v>[a-z][a-z0-9_-]+)', re.I | re.U)
+        TOK_vis         = re.compile(r'vis:(?P<v>public|restricted|private)', re.I)
+        TOK_camera      = re.compile(r'camera:(?P<v>[a-z0-9 _-]+)', re.I)
+        TOK_reserved    = re.compile(r'(?P<v>[a-z]+):', re.I)
+        
+        tagre           = '[a-z](?:[a-z0-9_-]|(?(q) ))*'
+        TOK_tag         = re.compile(r'(?P<q>")?(?P<v>%s)(?(q)")' % tagre, re.I | re.U)
+        TOK_qualtag     = re.compile(r'(?P<q>")?(?P<v>(?::%s)+:*\*?)(?(q)")' % tagre,
+                                     re.I | re.U)
+        
+        TOK_id          = re.compile(r'(?P<v>\d+)')
+        
+        TOK_sub         = re.compile(r'(?P<v>/+)')
+        TOK_and         = re.compile(r'(?P<v>[&+]+)')
+        TOK_or          = re.compile(r'(?P<v>\|)')
+        TOK_not         = re.compile(r'(?P<v>[-~])')
+        TOK_lp          = re.compile(r'(?P<v>\()')
+        TOK_rp          = re.compile(r'(?P<v>\))')
+
+        TOK_eof         = re.compile(r'(?P<v>)$')
+
+        # Order of tokens matters; need to put predicate: entries first
+        # so that tags don't get confused
+        tokens = [ TOK_owner, TOK_vis, TOK_camera, TOK_photog,
+                   TOK_reserved,
+                   TOK_tag, TOK_qualtag, TOK_id,
+                   TOK_sub, TOK_and, TOK_or, TOK_not,
+                   TOK_lp, TOK_rp,
+                   TOK_eof ]
+        
+        # token lookahead
+        lookahead=[]
+
+        def tok_consume():
+            " Consume a token from the input string "
+            self.search = self.search.lstrip()
+            
+            for t in tokens:
+                m = t.match(self.search)
+                if m is not None:
+                    self.search = self.search[m.end():]
+                    return (t, m.group('v'))
+
+            raise Exception('failed to match token with remains "%s"' % self.search)
+
+        def tok_next(expect = None):
+            " Return the next token "
+
+            #print 'getting next tok from %s "%s"; expect %s' % (lookahead, self.search, expect)
+            
+            if lookahead:
+                ret = lookahead.pop(0)
+            else:
+                ret = tok_consume()
+
+            if expect is not None and expect is not ret[0]:
+                raise Exception('unexpected token: wanted %s, got %s', expect, ret[0])
+            
+            #print 'returning token %s %s' % ret
+
+            return ret
+        
+        def tok_LA(x):
+            " Return a lookahead token "
+            while len(lookahead) < x:
+                lookahead.append(tok_consume())
+
+            ret = lookahead[x-1]
+            #print 'LA(%s) returning %s "%s", remains:"%s"' % (x, ret[0], ret[1], self.search)
+            return ret
+
+        def parse_expr():
+            return parse_subExpr()
+
+        def parse_subExpr():
+            q = parse_catExpr()
+
+            while tok_LA(1)[0] is TOK_sub:
+                tok_next(TOK_sub)
+                q = q & parse_catExpr()
+
+            return q
+
+        def parse_catExpr():
+            q = parse_orExpr()
+
+            while tok_LA(1)[0] in (TOK_vis, TOK_camera, TOK_owner, TOK_tag, TOK_photog,
+                                   TOK_qualtag, TOK_not, TOK_id, TOK_lp):
+                q = q & parse_orExpr()
+
+            return q
+
+        def parse_orExpr():
+            q = parse_andExpr()
+
+            while tok_LA(1)[0] is TOK_or:
+                tok_next(TOK_or)
+                q = q | parse_andExpr()
+
+            return q
+
+        def parse_andExpr():
+            q = parse_notExpr()
+
+            while tok_LA(1)[0] is TOK_and:
+                tok_next(TOK_and)
+                q = q & parse_notExpr()
+
+            return q
+
+        def parse_notExpr():
+            if tok_LA(1)[0] is TOK_not:
+                tok_next(TOK_not)
+                q = QNot(parse_term())
+            else:
+                q = parse_term()
+            return q
+
+        def parse_term():
+            tok,val = tok_LA(1)
+
+            if tok is TOK_lp:
+                tok_next(TOK_lp)
+                q = parse_catExpr()
+                tok_next(TOK_rp)
+
+            elif tok is TOK_owner:
+                tok_next(tok)
+                q = Q(owner__username = val)
+
+            elif tok is TOK_photog:
+                tok_next(tok)
+                q = Q(photographer__username = val)
+
+            elif tok is TOK_vis:
+                tok_next(tok)
+                val = val.lower()
+                q = Q(visibility = { 'public': Picture.PUBLIC,
+                                     'restricted': Picture.RESTRICTED,
+                                     'private': Picture.PRIVATE }[val])
+
+            elif tok is TOK_camera:
+                tok_next(tok)
+                q = Q(camera__nickname = val)
+
+            # XXX TODO: search camera tags too
+            elif tok is TOK_tag:
+                tok_next(tok)
+                q = Q(tags__word = val)
+
+            elif tok is TOK_qualtag:
+                tok_next(tok)
+                
+                if val[-1] == '*':
+                    val = val[:-1]
+                    q = Q(tags__in = Tag.tag(val).more_specific())
+                else:
+                    q = Q(tags = Tag.tag(val))
+
+            elif tok is TOK_id:
+                tok_next(tok)
+                q = Q(id = int(val))
+
+            elif tok is TOK_eof:
+                tok_next(tok)
+                q = Q()
+
+            elif tok is TOK_reserved:
+                raise Exception('reserved predicate "%s" used: '
+                                'did you mean to use a :qualified:tag?' % val)
+
+            else:
+                raise Exception('unexpected token "%s" (%s)' % (tok, val))
+
+            return q
+        
+        return parse_expr()
+        
+class PictureSearchFeed(PictureFeed):
+    __slots__ = [ 'summary', 'search', 'query' ]
+    
+    def __init__(self, summary):
+        self.summary = summary
+        super(PictureSearchFeed, self).__init__()
+        
+    def urlparams(self, kwargs):
+        super(PictureSearchFeed, self).urlparams(kwargs)
+        self.search = kwargs.get('search', '').strip(' /+')
+        self.query = SearchParser(self.search).query
+
+    def filter(self):
+        return super(PictureSearchFeed, self).filter() & self.query
+
+    def title(self):
+        return 'Pictures: "%s": %d results' % (self.search, Picture.objects.filter(self.filter()).distinct().count())
+
 class Comment(models.Model):
     comment = models.TextField()
     user = models.ForeignKey(User)
@@ -386,11 +773,13 @@ class Comment(models.Model):
         return '%s: %s' % (user.username, comment)
 
 class CommentFeed(AtomFeed):
-    def __init__(self):
-        AtomFeed.__init__(self)
-
+    __slots__ = [ 'picture' ]
+    
     def title(self):
         return 'Comments for #%d: %s' % (self.picture.id, self.picture.title or 'untitled')
+
+    def urlparams(self, kwargs):
+        self.picture = get_url_picture(self.authuser, kwargs)
 
     def entries(self, **kwargs):
         return [ CommentEntry(c)
@@ -409,9 +798,10 @@ class CommentEntry(AtomEntry):
         if comment is not None:
             self.comment = comment
 
+# Make a pile of distinct names so that reverse URL lookups work
 picturefeed     = PictureFeed()
-picturesearch   = PictureFeed()
-picturesummary  = PictureFeed()
+picturesearch   = PictureSearchFeed(summary=False)
+picturesummary  = PictureSearchFeed(summary=True)
 picture         = PictureEntry()
 pictureexif     = PictureExif()
 pictureimage    = PictureImage()
@@ -421,8 +811,8 @@ comment         = CommentEntry()
 urlpatterns = \
   patterns('',
            ('^$',                       picturefeed),
-           ('^-/(?P<search>.*)$',       picturesearch),
-           ('^--/(?P<summary>.*)$',     picturesummary),
+           ('^-/(?P<search>.*)/*$',     picturesearch),
+           ('^--/(?P<search>.*)/*$',    picturesummary),
            
            ('(?P<picid>[0-9]+)/$',                                      picture),
            ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),
@@ -432,5 +822,6 @@ urlpatterns = \
            )
 
 
-__all__ = [ 'Picture', 'PictureFeed', 'PictureEntry', 'PictureImage', 'PictureExif',
+__all__ = [ 'Picture', 'PictureFeed', 'PictureSearchFeed',
+            'PictureEntry', 'PictureImage', 'PictureExif',
             'Comment', 'CommentFeed', 'CommentEntry' ]

@@ -10,6 +10,7 @@ from django.conf.urls.defaults import patterns, include
 from imagestore.tag import Tag
 from imagestore.atomfeed import AtomFeed, AtomEntry
 from imagestore.namespace import atom, xhtml
+from imagestore.user import get_url_user
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -34,18 +35,33 @@ class Camera(models.Model):
     class Admin:
         pass
 
+def get_url_camera(user, kwargs):
+    id = kwargs.get('camnick', None)
+    if id is None:
+        return None
+
+    return Camera.objects.get(owner=user, nickname = id)
+
 class CameraFeed(AtomFeed):
-    def __init__(self):
-        AtomFeed.__init__(self)
-        
+    __slots__ = [ 'urluser' ]
+
+    def urlparams(self, kwargs):
+        self.urluser = get_url_user(kwargs)
+
     def entries(self, **kwargs):
         return [ CameraEntry(c) for c in self.urluser.camera_set.all() ]
 
 class CameraEntry(AtomEntry):
+    __slots__ = [ 'camera', 'urluser' ]
+    
     def __init__(self, camera = None):
         AtomEntry.__init__(self)
         if camera:
             self.camera = camera
+
+    def urlparams(self, kwargs):
+        self.urluser = get_url_user(kwargs)
+        self.camera = get_url_camera(self.urluser, kwargs)
         
     def render(self):
         c = self.camera

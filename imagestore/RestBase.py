@@ -1,8 +1,12 @@
 from __future__ import absolute_import
 
+import re
+from datetime import datetime
+
 from django.http import HttpResponseNotAllowed, HttpResponseNotFound
 from django.views.decorators.cache import cache_control
 from django.contrib.auth.models import User
+from django.core.exceptions import ObjectDoesNotExist
 
 class RestBase(object):
     """ Useful base class for RESTful apps, which demultiplexes a
@@ -10,16 +14,25 @@ class RestBase(object):
     implementation of HEAD based on GET; it need only be replaced if
     GET does way too much work to satisfy a HEAD request."""
 
-    __slots__ = [ 'urluser', 'request', 'args', 'kwargs' ]
+    __slots__ = [ 'request', 'args', 'kwargs', 'authuser' ]
     
     def __init__(self):
-        self.urluser = None
+        self.authuser = None
 
     def methods(self):
         return ['GET', 'HEAD' ]
 
     def not_allowed(self):
         return HttpResponseNotAllowed(self.methods())
+
+    def get_Etag(self):
+        return None
+
+    def get_last_modified(self):
+        return None
+
+    def get_content_length(self):
+        return None
     
     def do_GET(self):
         return self.not_allowed()
@@ -27,7 +40,9 @@ class RestBase(object):
     def do_HEAD(self, *args, **kwargs):
         resp = self.do_GET(self.request, *args, **kwargs)
         if resp.status_code == 200:
-            resp.body = None
+            resp.content = ''
+            resp['Content-Length'] = '0'
+            
         return resp
 
     def do_POST(self, *args, **kwargs):
@@ -39,6 +54,36 @@ class RestBase(object):
     def do_DELETE(self, *args, **kwargs):
         return self.not_allowed()
 
+    @staticmethod
+    def knobble(response):
+        response.status_code = 304
+        response.content = ''
+        response['Content-Length'] = '0'
+
+    def handle_cond_get(self, request, response):
+
+        # Handle ETag
+        et = self.get_Etag()
+        if et is not None:
+            et = '"%s"' % et
+                
+            ifnm = request.META.get('HTTP_IF_NONE_MATCH', None)
+            if ifnm is not None:
+                ifnm = re.split(', *', ifnm)
+                if et in ifnm or '*' in ifnm:
+                    self.knobble(response)
+            response['ETag'] = et
+
+        # Handle if-modified-since
+        lm = self.get_last_modified()
+        if lm is not None:
+            last_mod = request.META.get('HTTP_IF_MODIFIED_SINCE', None)
+            if last_mod is not None:
+                last_mod = datetime.strptime(last_mod, '%a, %d %b %Y %H:%M:%S GMT')
+                if last_mod > lm:
+                    self.knobble(response)
+            response['Last-Modified'] = lm.strftime('%a, %d %b %Y %H:%M:%S GMT')
+
     @cache_control(no_cache=True)
     def __call__(self, request, *args, **kwargs):
         self.request = request
@@ -47,27 +92,25 @@ class RestBase(object):
 
         method = getattr(self, 'do_%s' % request.method)
 
-        if 'user' in kwargs:
-            try:
-                self.urluser = User.objects.get(username=kwargs['user'])
-            except User.DoesNotExist:
-                return HttpResponseNotFound('User "%s" not found' % kwargs['user'])
+        try:
+            self.urlparams(kwargs)
+        except ObjectDoesNotExist, e:
+            return HttpResponseNotFound(e.message)
+        
+        response = method(self, *args, **kwargs)
 
-        if 'picid' in kwargs:
-            from imagestore.picture import Picture
-            try:
-                # XXX filter visibility
-                self.picture = Picture.objects.get(pk=int(kwargs['picid']))
-            except Picture.DoesNotExist:
-                return HttpResponseNotFound('Picture %s not found' % kwargs['picid'])
+        cl = self.get_content_length()
+        if cl is not None and not response.has_header('Content-Length'):
+            response['Content-Length'] = str(cl)
 
-        if 'camnick' in kwargs:
-            from imagestore.camera import Camera
-            try:
-                self.camera = Camera.objects.get(nickname = kwargs['camnick'])
-            except Camera.DoesNotExist:
-                return HttpResponseNotFound('Camera %s not found' % kwargs['camnick'])
-                
-        return method(self, *args, **kwargs)
+        if request.method in ('GET', 'HEAD'):
+            self.handle_cond_get(request, response)
+
+        now = datetime.utcnow()
+        response['Date'] = now.strftime('%a, %d %b %Y %H:%M:%S GMT')
+
+        #print 'type(content)=%s' % len(response.content)
+
+        return response
 
 __all__ = [ 'RestBase' ]

@@ -6,7 +6,6 @@ from django.db import models
 from django.db.models import permalink
 
 from imagestore.atomfeed import AtomEntry
-from imagestore.picture import PictureFeed
 import imagestore.urn as urn
 from imagestore.namespace import xhtml, atom
 import imagestore.microformat as microformat
@@ -16,8 +15,11 @@ class UserProfile(models.Model):
                              edit_inline=models.STACKED)
     
     friends = models.ManyToManyField(User, core=True, related_name='friends')
-    icon = models.ForeignKey('Picture', null=True)
 
+    # This seems to be causing a recursive import problem
+    #icon = models.ForeignKey('Picture', null=True)
+    icon = None
+    
     @permalink
     def get_absolute_url(self):
         return ('imagestore.user.user', (self.user.username,))
@@ -28,7 +30,19 @@ class UserProfile(models.Model):
     def get_urn(self):
         return 'urn:user:%d' % self.id
 
+def get_url_user(kwargs):
+    id = kwargs.get('user', None)
+    if id is None:
+        return None
+
+    return User.objects.get(username = id)
+
 class UserEntry(AtomEntry):
+    __slots__ = [ 'urluser' ]
+
+    def urlparams(self, kwargs):
+        self.urluser = get_url_user(kwargs)
+
     def render(self):
         u = self.urluser
         up = u.get_profile()
@@ -64,4 +78,4 @@ def setup():
 
 setup()
 
-__all__ = [ 'User', 'UserProfile', 'UserEntry' ]
+__all__ = [ 'UserProfile', 'UserEntry', 'get_url_user' ]

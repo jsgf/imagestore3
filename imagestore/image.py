@@ -95,6 +95,9 @@ class StillImage(Image):
 
         args = []
 
+        # Strip all Exif
+        args.append('-strip')
+
         # Rotate first
         if p.orientation != 0:
             args.append('-rotate %d' % -p.orientation)
@@ -138,7 +141,7 @@ class StillImage(Image):
         tmp.flush()
 
         cmd = '%s %s %s jpg:-' % (convert, ' '.join(args), tmp.name)
-        print 'cmd= %s' % cmd
+        #print 'cmd=%s' % cmd
         result = os.popen(cmd)
 
         data = ''.join(result)
