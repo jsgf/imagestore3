@@ -8,9 +8,10 @@ from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 
 from imagestore.tag import Tag
-from imagestore.atomfeed import AtomFeed, AtomEntry
-from imagestore.namespace import atom, xhtml
+from imagestore.namespace import xhtml
 from imagestore.user import get_url_user
+from imagestore.htmllist import HtmlList, HtmlEntry
+from imagestore import microformat
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -42,20 +43,20 @@ def get_url_camera(user, kwargs):
 
     return Camera.objects.get(owner=user, nickname = id)
 
-class CameraFeed(AtomFeed):
+class CameraList(HtmlList):
     __slots__ = [ 'urluser' ]
 
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
 
     def entries(self, **kwargs):
-        return [ CameraEntry(c) for c in self.urluser.camera_set.all() ]
+        return [ CameraEntry(c).render() for c in self.urluser.camera_set.all() ]
 
-class CameraEntry(AtomEntry):
+class CameraEntry(HtmlEntry):
     __slots__ = [ 'camera', 'urluser' ]
     
     def __init__(self, camera = None):
-        AtomEntry.__init__(self)
+        HtmlEntry.__init__(self)
         if camera:
             self.camera = camera
 
@@ -64,14 +65,32 @@ class CameraEntry(AtomEntry):
         self.camera = get_url_camera(self.urluser, kwargs)
         
     def render(self):
+        from imagestore.picture import PictureSearchFeed
         c = self.camera
+
+        def format_ct(ct):
+            return [ xhtml.dt(microformat.datetime(ct.start), ' - ', microformat.datetime(ct.end)),
+                     xhtml.dd(xhtml.ul([ xhtml.li(t.render()) for t in ct.tags.all() ])) ]
+
+        u = c.owner
+        up = c.owner.get_profile()
         
-        return atom.entry(atom.title('%s - %s' % (c.nickname, c.model)),
-                          atom.content({ 'type': 'xhtml' },
-                                       xhtml.div(xhtml.p('%d pictures taken' %
-                                                         c.picture_set.count()))
-                                       )
-                          )
+        return xhtml.div({'class': 'camera' },
+                         xhtml.h2(xhtml.a({'class': 'nickname', 'href': c.get_absolute_url() },
+                                          c.nickname), ' - ',
+                                  xhtml.span({'class': 'make'}, c.make), ', ',
+                                  xhtml.span({'class': 'model'}, c.model)),
+                         xhtml.dl(xhtml.dt('make'), xhtml.dd(c.make),
+                                  xhtml.dt('model'), xhtml.dd(c.model),
+                                  xhtml.dt('serial'), xhtml.dd(c.serial),
+                                  xhtml.dt('owner'), xhtml.dd(xhtml.a({'href': up.get_absolute_url()},
+                                                                      u.username)),
+                                  xhtml.dt('pictures taken'),
+                                  xhtml.dd(xhtml.a({'href': up.get_search_url('camera:%s' % c.nickname)},
+                                                   str(c.picture_set.count()))),
+                                  xhtml.dt('keywords'),
+                                  xhtml.dd(xhtml.dl(*[ format_ct(ct)
+                                                       for ct in c.cameratags_set.all() ]))))
 
 def get_camera(owner, exif):
     try:
@@ -88,10 +107,10 @@ def get_camera(owner, exif):
 
     c = Camera.objects.filter(owner=owner, make=make, model=model)
     if serial is not None:
-        c.filter(serial=serial)
+        c = c.filter(serial=serial)
         
     if c.count() == 0:
-        nick = string.join(model.lower().strip().split(), '')
+        nick = string.join(model.lower().strip().split(), '-')
 
         c = Camera(owner=owner, nickname=nick,
                    make=make, model=model, serial=serial or '')
@@ -117,11 +136,11 @@ class CameraTags(models.Model):
 
 __all__ = [ 'Camera', 'get_camera', 'CameraTags' ]
 
-camerafeed      = CameraFeed()
+cameralist      = CameraList()
 camera          = CameraEntry()
 
 urlpatterns = \
   patterns('',
-           ('^$',                               camerafeed),
+           ('^$',                               cameralist),
            ('^(?P<camnick>[a-zA-Z0-9_-]+)/',    camera),
            )

@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 from cStringIO import StringIO
-from xml.etree.cElementTree import ElementTree
 
 from django.http import HttpRequest, HttpResponse
 
@@ -33,6 +32,9 @@ class AtomFeed(RestBase):
     def preamble(self):
         return []
 
+    def content_type(self):
+        return content_type
+    
     def render(self):
         entries = self.entries()
 
@@ -40,39 +42,20 @@ class AtomFeed(RestBase):
                          opensearch.totalResults('%d' % len(entries)),
                          atom.title(self.title()),
                          atom.subtitle(self.subtitle()),
-                         atom.link({'ref': 'self', 'href': self.uri}),
+                         atom.link({'ref': 'self', 'href': self.request.path}),
                          [ e.render() for e in entries ])
 
         return feed
-    
-    def do_GET(self, *args, **kwarg):
-        self.uri = self.request.path
-
-        feed = self.render()
-
-        out = StringIO()
-        ElementTree(feed).write(out, 'utf-8')
-        out.write('\n')
-        
-        return HttpResponse(out.getvalue(), content_type)
 
 class AtomEntry(RestBase):
     def __init__(self):
         RestBase.__init__(self)
 
+    def content_type(self):
+        return content_type
+
     def render(self):
         return atom.entry()
-
-    def do_GET(self, *args, **kwarg):
-        self.uri = self.request.path
-
-        feed = self.render()
-
-        out = StringIO()
-        ElementTree(feed).write(out, 'utf-8')
-        out.write('\n')
-        
-        return HttpResponse(out.getvalue(), content_type)
 
 def atomtime(td):
     return td.strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -82,8 +65,3 @@ def atomperson(self):
              atom.email(self.email),
              atom.username(self.username), 
              atom.id('urn:user:%d' % self.id) ]
-
-class HttpResponseConflict(HttpResponse):
-    def __init__(self, *args, **kwargs):
-        HttpResponse.__init__(self, *args, **kwargs)
-        self.status_code = 409

@@ -18,13 +18,12 @@ from django.core.exceptions import ObjectDoesNotExist
 
 from imagestore.media import Media
 from imagestore.tag import Tag
-from imagestore.RestBase import RestBase
-
+from imagestore.RestBase import (RestBase, HttpResponseBadRequest,
+                                 HttpResponseConflict, HttpResponseBadRequest,
+                                 HttpResponseContinue, HttpResponseExpectationFailed)
 from imagestore import urn, EXIF, image, microformat
 
-from imagestore.atomfeed import (AtomFeed, AtomEntry,
-                                 atomtime, atomperson,
-                                 HttpResponseConflict)
+from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
 from imagestore.namespace import atom, imst, xhtml
 
 class FilteredPictures(models.Manager):
@@ -223,6 +222,73 @@ def get_url_picture(authuser, kwargs):
 
     return Picture.get(authuser, int(id))
 
+def picture_upload(self, derived_from=None, *args, **kwargs):
+    def test_exists(sha1):
+        try:
+            # unfiltered visibility OK here, since unique is unique
+            p = Picture.objects.get(sha1hash = sha1)
+            return True
+        except:
+            return False
+
+    client_sha1 = self.request.POST.get('sha1hash', None)
+
+    file = self.request.FILES.get('image')
+    if file is None:
+        # Implement "look before you leap".  If the client gives
+        # us a hash but no image data, and expects a continue
+        # response, then check to see if the hash matches any
+        # existing image, to save them from having to download the
+        # data before finding that out.
+        expect = self.request.META.get('HTTP_EXPECT', None)
+        print 'client_sha1=%s expect="%s"' % (client_sha1, expect)
+        if (client_sha1 is not None and
+            expect is not None and
+            expect.startswith("100-")):
+            if test_exists(client_sha1):
+                return HttpResponseExpectationFailed('Picture %s already exists\n' % client_sha1)
+            return HttpResponseContinue('OK, continue\n')
+        return HttpResponseBadRequest('Need image data\n')
+
+    # XXX allow unauthenticated uploads for now
+    if self.urluser is None: # != self.authuser:
+        return HttpResponseForbidden('Need owner for image\n')
+
+    data = file['content']
+    type = file['content-type']
+    filename = file['filename']
+
+    sha1 = sha.new(data)
+    hash = sha1.digest().encode('hex')
+
+    # Make sure they provided a consistent hash
+    if client_sha1 and hash != client_sha1:
+        return HttpResponseBadRequest('provided sha1 (%s) != data sha1 (%s)\n' % (client_sha1, hash))
+
+    if test_exists(hash):
+        return HttpResponseConflict('Picture %s already exists\n' % hash)
+
+    title = self.request.POST.get('title')
+    print 'title=%s' % title
+
+    file = StringIO(data)
+    p = image.importer(file, owner=self.urluser, title=title,
+                       original_ref=filename,
+                       sha1hash=hash, visibility=Picture.PUBLIC,
+                       mimetype=type)
+
+    if 'tags' in self.request.POST:
+        p.add_tags(self.request.POST['tags'])
+
+    entry = PictureEntry(p)
+    entry.request = self.request
+    ret = entry.do_GET()
+    ret['Location'] = p.get_absolute_url()
+    ret.response_code = 201         # created
+
+    return ret
+        
+
 class PictureEntry(AtomEntry):
     __slots__ = [ 'picture', 'urluser' ]
     
@@ -252,24 +318,28 @@ class PictureEntry(AtomEntry):
             return atom.category(attr)
 
         atomtags = [ atomcat(tag) for tag in p.effective_tags() ]
-        htmltags = xhtml.ul([ xhtml.li(tag.render()) for tag in p.effective_tags() ])
+        htmltags = xhtml.ul([ xhtml.li(xhtml.a({ 'href':
+                                                 PictureSearchFeed(search=tag.canonical()).get_absolute_url() },
+                                               tag.render()))
+                              for tag in p.effective_tags() ])
 
         photog = ''
         if p.photographer is not None:
-            photog = xhtml.p('Photographer:', microformat.hcard(p.photographer))
+            photog = [ xhtml.dt('Photographer'), xhtml.dd(microformat.hcard(p.photographer)) ]
 
-        html_derivatives = ''
+        html_derivatives = []
         if p.derivatives.count() != 0:
-            html_derivatives = xhtml.p('Derivatives:',
-                                       xhtml.ul([ xhtml.li(xhtml.a({'href': deriv.get_absolute_url() },
-                                                                   '%d: %s' % (deriv.id, deriv.title)))
-                                                  for deriv in p.derivatives.all() ]))
+            html_derivatives = [ xhtml.dt('Derivatives'),
+                                 xhtml.dd(xhtml.ul([ xhtml.li(xhtml.a({'href': deriv.get_absolute_url() },
+                                                                      '%d: %s' % (deriv.id, deriv.title)))
+                                                     for deriv in p.derivatives.all() ])) ]
 
         derived_from = []
         if p.derived_from is not None:
-            derived_from = xhtml.p(xhtml.a({'href': p.derived_from.get_absolute_url()},
-                                           'Derived from %d: %s' % (p.derived_from.id,
-                                                                    p.derived_from.title)))
+            derived_from = [ xhtml.dt('Derived from'),
+                             xhtml.dd(xhtml.a({'href': p.derived_from.get_absolute_url()},
+                                              '%d: %s' % (p.derived_from.id,
+                                                          p.derived_from.title))) ]
 
         size = 'tiny'
         img = p.image(size)
@@ -281,20 +351,20 @@ class PictureEntry(AtomEntry):
                                                  'width': str(width),
                                                  'height': str(height),
                                                  'alt': p.title }))),
-                    xhtml.div({'class': 'metadata'},
-                              xhtml.p({'class': 'owner' },
-                                      'Owner:', microformat.hcard(p.owner)),
-                              photog,
-                              derived_from,
-                              html_derivatives,
-                              xhtml.span({ 'class': 'camera' },
-                                         'Taken with: ',
-                                         xhtml.a({'href': p.camera.get_absolute_url()},
-                                                 p.camera.nickname)),
-                              xhtml.p({'class': 'tags'},
-                                      'Tags:', htmltags),
-                              xhtml.a({'href': p.get_comment_url()},
-                                      '%d comments' % p.comment_set.count())) ]
+                    xhtml.dl({ 'class': 'metadata' },
+                             xhtml.dt({'class': 'owner' }, 'Owner' ),
+                             xhtml.dd(microformat.hcard(p.owner)),
+                             photog,
+                             derived_from,
+                             html_derivatives,
+                             xhtml.dt('Camera'),
+                             xhtml.dd(xhtml.a({'href': p.camera.get_absolute_url()},
+                                              p.camera.nickname)),
+                             xhtml.dt({'class': 'tags'}, 'Tags'),
+                             xhtml.dd(htmltags)),
+
+                    xhtml.a({'href': p.get_comment_url()},
+                            '%d comments' % p.comment_set.count()) ]
 
         related = [ atom.link({'rel': 'related',
                                'href': deriv.get_absolute_url(),
@@ -317,6 +387,9 @@ class PictureEntry(AtomEntry):
             ret.append(atom.link({ 'rel': 'camera', 'href': p.camera.get_absolute_url() }))
 
         return ret
+
+    def do_POST(self, *args, **kwargs):
+        return picture_upload(self, *args, **kwargs)
 
 class PictureExif(RestBase):
     __slots__ = [ 'picture' ]
@@ -452,50 +525,11 @@ class PictureFeed(AtomFeed):
         filter = self.filter()
         res = Picture.objects.vis_filter(self.authuser, filter).distinct()
         return [ PictureEntry(p) for p in res ]
+
     
     def do_POST(self, *args, **kwargs):
-        file = self.request.FILES.get('image')
-        if file is None:
-            return HttpResponseConflict('Need image data\n')
-
-        if self.urluser is None:
-            return HttpResponseForbidden('Need owner for image\n')
-
-        data = file['content']
-        type = file['content-type']
-        filename = file['filename']
-        
-        sha1 = sha.new()
-        sha1.update(data)
-        hash = sha1.digest().encode('hex')
-
-        try:
-            # unfiltered visibility OK here, since unique is unique
-            p = Picture.objects.get(sha1hash = hash)
-            return HttpResponseConflict('Image %d:%s already exists\n' %
-                                        (p.id, p.sha1hash))
-        except Picture.DoesNotExist:
-            pass
-
-        title = self.request.POST.get('title')
-        print 'title=%s' % title
-
-        file = StringIO(data)
-        p = image.importer(file, owner=self.urluser, title=title,
-                           original_ref=filename,
-                           sha1hash=hash, visibility=Picture.PUBLIC,
-                           mimetype=type)
-
-        if 'tags' in self.request.POST:
-            p.add_tags(self.request.POST['tags'])
-
-        entry = PictureEntry(p)
-        entry.request = self.request
-        ret = entry.do_GET()
-        ret['Location'] = p.get_absolute_url()
-        
-        return ret
-
+        return picture_upload(self, *args, **kwargs)
+    
 class SearchParser(object):
     __slots__ = [ 'search', 'query' ]
     
@@ -712,6 +746,8 @@ class SearchParser(object):
                 q = Q(camera__nickname = val)
 
             # XXX TODO: search camera tags too
+            # q = q | Q(camera__cameratags__tags__word = 'foo')
+            # .extra(where=['imagestore_picture.created_time BETWEEN imagestore_picture__camera__cameratags.start AND imagestore_picture__camera__cameratags.end'])
             elif tok is TOK_tag:
                 tok_next(tok)
                 q = Q(tags__word = val)
@@ -747,9 +783,15 @@ class SearchParser(object):
 class PictureSearchFeed(PictureFeed):
     __slots__ = [ 'summary', 'search', 'query' ]
     
-    def __init__(self, summary):
+    def __init__(self, summary=False, search=None):
+        self.search = search
         self.summary = summary
         super(PictureSearchFeed, self).__init__()
+
+    @permalink
+    def get_absolute_url(self):
+        return ('imagestore.picture.picturesearch',
+                [ self.search ], { 'search': self.search })
         
     def urlparams(self, kwargs):
         super(PictureSearchFeed, self).urlparams(kwargs)
@@ -811,8 +853,8 @@ comment         = CommentEntry()
 urlpatterns = \
   patterns('',
            ('^$',                       picturefeed),
-           ('^-/(?P<search>.*)/*$',     picturesearch),
-           ('^--/(?P<search>.*)/*$',    picturesummary),
+           ('^-/(?P<search>.*)/$',     picturesearch),
+           ('^--/(?P<search>.*)/$',    picturesummary),
            
            ('(?P<picid>[0-9]+)/$',                                      picture),
            ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),

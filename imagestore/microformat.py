@@ -4,6 +4,9 @@ from imagestore.atomfeed import atomtime
 from imagestore.namespace import xhtml
 import imagestore.EXIF as EXIF
 
+def datetime(dt):
+    return xhtml.abbr({ 'class': 'dtbegin', 'title': atomtime(dt) }, str(dt))
+
 def exif(exif):
     """ Generate a simple xhtml microformat encoding for exif data """
     dl = xhtml.dl({'class': 'exif'})

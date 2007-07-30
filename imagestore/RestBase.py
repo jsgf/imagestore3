@@ -2,8 +2,9 @@ from __future__ import absolute_import
 
 import re
 from datetime import datetime
+from xml.etree.cElementTree import ElementTree
 
-from django.http import HttpResponseNotAllowed, HttpResponseNotFound
+from django.http import HttpResponseNotAllowed, HttpResponse, HttpResponseNotFound
 from django.views.decorators.cache import cache_control
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
@@ -28,14 +29,23 @@ class RestBase(object):
     def get_Etag(self):
         return None
 
+    def content_type(self):
+        return 'text/plain'
+
     def get_last_modified(self):
         return None
 
     def get_content_length(self):
         return None
     
-    def do_GET(self):
-        return self.not_allowed()
+    def do_GET(self, *args, **kwarg):
+        resp = HttpResponse(mimetype = self.content_type())
+
+        resp.write('<?xml version="1.0" encoding="utf-8"?>\n')
+        ElementTree(self.render()).write(resp, 'utf-8')
+        resp.write('\n')
+        
+        return resp
 
     def do_HEAD(self, *args, **kwargs):
         resp = self.do_GET(self.request, *args, **kwargs)
@@ -113,4 +123,27 @@ class RestBase(object):
 
         return response
 
-__all__ = [ 'RestBase' ]
+class HttpResponseBadRequest(HttpResponse):
+    def __init__(self, *args, **kwargs):
+        HttpResponse.__init__(self, *args, **kwargs)
+        self.status_code = 400
+
+class HttpResponseConflict(HttpResponse):
+    def __init__(self, *args, **kwargs):
+        HttpResponse.__init__(self, *args, **kwargs)
+        self.status_code = 409
+
+class HttpResponseContinue(HttpResponse):
+    def __init__(self, *args, **kwargs):
+        HttpResponse.__init__(self, *args, **kwargs)
+        self.status_code = 100
+
+class HttpResponseExpectationFailed(HttpResponse):
+    def __init__(self, *args, **kwargs):
+        HttpResponse.__init__(self, *args, **kwargs)
+        self.status_code = 417
+
+
+__all__ = [ 'RestBase', 'HttpResponseBadRequest', 'HttpResponseConflict',
+            'HttpResponseContinue' ]
+

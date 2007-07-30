@@ -1,14 +1,17 @@
 from __future__ import absolute_import
 
+from xml.etree.cElementTree import ElementTree
+
 from django.conf.urls.defaults import patterns, include
 from django.contrib.auth.models import User
 from django.db import models
 from django.db.models import permalink
+from django.http import HttpResponse
 
-from imagestore.atomfeed import AtomEntry
 import imagestore.urn as urn
-from imagestore.namespace import xhtml, atom
+from imagestore.namespace import xhtml
 import imagestore.microformat as microformat
+from imagestore.htmllist import HtmlList, HtmlEntry
 
 class UserProfile(models.Model):
     user = models.ForeignKey(User, unique=True, core=True,
@@ -24,9 +27,15 @@ class UserProfile(models.Model):
     def get_absolute_url(self):
         return ('imagestore.user.user', (self.user.username,))
 
-    def get_images_url(self):
-        return self.get_absolute_url() + 'images/'
-    
+    def get_image_url(self):
+        return self.get_absolute_url() + 'image/'
+
+    def get_search_url(self, search):
+        return self.get_image_url() + '-/%s' % search
+
+    def get_camera_url(self):
+        return self.get_absolute_url() + 'camera/'
+
     def get_urn(self):
         return 'urn:user:%d' % self.id
 
@@ -37,7 +46,19 @@ def get_url_user(kwargs):
 
     return User.objects.get(username = id)
 
-class UserEntry(AtomEntry):
+class UserList(HtmlList):
+    def render(self):
+        h = xhtml.ul({ 'class': 'users' },
+                     [ xhtml.li(microformat.hcard(u)) for u in User.objects.all() ])
+        return h
+    
+    def urlparams(self, kwargs):
+        pass
+
+    def get_absolute_url(self):
+        return self.urluser.get_profile().get_absolute_url()
+
+class UserEntry(HtmlEntry):
     __slots__ = [ 'urluser' ]
 
     def urlparams(self, kwargs):
@@ -46,27 +67,46 @@ class UserEntry(AtomEntry):
     def render(self):
         u = self.urluser
         up = u.get_profile()
-        hcard = microformat.hcard(u)
 
-        return atom.entry(atom.content({'type': 'xhtml'}, xhtml.div(hcard)),
-                          atom.link({'rel': 'images',
-                                     'href': up.get_images_url()}),
-                          [ atom.link({'rel': 'friend',
-                                       'href': f.get_profile().get_absolute_url()})
-                            for f in up.friends.all() ])
-                                       
+        content = microformat.hcard(u)
+
+        detail = xhtml.dl()
+        content.append(detail)
+        
+        if up.friends.count() > 0:
+            detail.append(xhtml.dt('Friends'))
+            detail.append(xhtml.dd(xhtml.ul({ 'class': 'friends' },
+                                            [ xhtml.li({ 'class': 'friend' },
+                                                       microformat.hcard(f))
+                                              for f in up.friends.all() ])))
+        if u.camera_set.count() > 0:
+            detail.append(xhtml.dt(xhtml.a({'href': up.get_camera_url() }, 'Cameras')))
+            detail.append(xhtml.dd(xhtml.ul({ 'class': 'cameras' },
+                                            [ xhtml.li({ 'class': 'camera' },
+                                                       xhtml.a({'href': c.get_absolute_url()},
+                                                               c.nickname))
+                                              for c in u.camera_set.all() ])))
+
+        detail.append(xhtml.dt('pictures'))
+        detail.append(xhtml.dd(xhtml.a({ 'href': up.get_image_url() },
+                                       str(u.owned_pics.count()))))
+
+        return content
+
     def get_absolute_url(self):
         return self.urluser.get_profile().get_absolute_url()
     
 urn.register('user',
              lambda urn: User.objects.get(id=int(urn[0])).get_profile())
 
+userlist = UserList()
 user = UserEntry()
 
 urlpatterns = patterns('',
-                       ('^$',           user),
-                       ('image/',       include('imagestore.picture')),
-                       ('camera/',      include('imagestore.camera')),
+                       ('^$',                           userlist),
+                       ('^(?P<user>[^/]+)/$',           user),
+                       ('^(?P<user>[^/]+)/image/',      include('imagestore.picture')),
+                       ('^(?P<user>[^/]+)/camera/',     include('imagestore.camera')),
                        )
 
 def setup():
