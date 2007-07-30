@@ -551,7 +551,7 @@ class SearchParser(object):
 
         -- space-separated concatenated terms are anded together with
         -- weak precedence; can be grouped with ()
-        catExpr : orExpr ( orExpr )*
+        catExpr : orExpr ( ','? orExpr )*
                 ;
 
         -- Terms can be ORed together with |
@@ -591,23 +591,22 @@ class SearchParser(object):
         
         Tags can take several forms:
                 foo             simple tag
-                "foo bar"       tag with spaces
+                foo bar         tag with spaces
                 :foo:bar        qualified tag
-                ":foo:bar blat" qualified tag with spaces
+                :foo:bar blat   qualified tag with spaces
         """
 
         # Group "v" contains the interesting token value; even
-        #       uninteresting tokens have one for consistency
-        # Group "q" is used for quote matching around tags
+        #       valueless tokens have one for consistency
         TOK_owner       = re.compile(r'owner:(?P<v>[a-z][a-z0-9_-]+)', re.I | re.U)
         TOK_photog      = re.compile(r'photog:(?P<v>[a-z][a-z0-9_-]+)', re.I | re.U)
         TOK_vis         = re.compile(r'vis:(?P<v>public|restricted|private)', re.I)
         TOK_camera      = re.compile(r'camera:(?P<v>[a-z0-9 _-]+)', re.I)
         TOK_reserved    = re.compile(r'(?P<v>[a-z]+):', re.I)
         
-        tagre           = '[a-z](?:[a-z0-9_-]|(?(q) ))*'
-        TOK_tag         = re.compile(r'(?P<q>")?(?P<v>%s)(?(q)")' % tagre, re.I | re.U)
-        TOK_qualtag     = re.compile(r'(?P<q>")?(?P<v>(?::%s)+:*\*?)(?(q)")' % tagre,
+        tagre           = '[a-z][a-z0-9_ -]+'
+        TOK_tag         = re.compile(r'(?P<v>%s)' % tagre, re.I | re.U)
+        TOK_qualtag     = re.compile(r'(?P<v>(?::%s)+:*\*?)' % tagre,
                                      re.I | re.U)
         
         TOK_id          = re.compile(r'(?P<v>\d+)')
@@ -618,7 +617,8 @@ class SearchParser(object):
         TOK_not         = re.compile(r'(?P<v>[-~])')
         TOK_lp          = re.compile(r'(?P<v>\()')
         TOK_rp          = re.compile(r'(?P<v>\))')
-
+        TOK_comma       = re.compile(r'(?P<v>,+)')
+        
         TOK_eof         = re.compile(r'(?P<v>)$')
 
         # Order of tokens matters; need to put predicate: entries first
@@ -627,7 +627,7 @@ class SearchParser(object):
                    TOK_reserved,
                    TOK_tag, TOK_qualtag, TOK_id,
                    TOK_sub, TOK_and, TOK_or, TOK_not,
-                   TOK_lp, TOK_rp,
+                   TOK_lp, TOK_rp, TOK_comma,
                    TOK_eof ]
         
         # token lookahead
@@ -687,7 +687,9 @@ class SearchParser(object):
             q = parse_orExpr()
 
             while tok_LA(1)[0] in (TOK_vis, TOK_camera, TOK_owner, TOK_tag, TOK_photog,
-                                   TOK_qualtag, TOK_not, TOK_id, TOK_lp):
+                                   TOK_qualtag, TOK_not, TOK_id, TOK_lp, TOK_comma):
+                if tok_LA(1)[0] is TOK_comma:
+                    tok_next(TOK_comma)
                 q = q & parse_orExpr()
 
             return q
