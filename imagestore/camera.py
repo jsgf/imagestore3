@@ -12,6 +12,7 @@ from imagestore.namespace import xhtml
 from imagestore.user import get_url_user
 from imagestore.htmllist import HtmlList, HtmlEntry
 from imagestore import microformat
+from imagestore.daterange import daterange
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -69,7 +70,7 @@ class CameraEntry(HtmlEntry):
         c = self.camera
 
         def format_ct(ct):
-            return [ xhtml.dt(microformat.datetime(ct.start), ' - ', microformat.datetime(ct.end)),
+            return [ xhtml.dt(microformat.html_daterange(ct.daterange())),
                      xhtml.dd(xhtml.ul([ xhtml.li(t.render()) for t in ct.tags.all() ])) ]
 
         u = c.owner
@@ -130,6 +131,12 @@ class CameraTags(models.Model):
     start = models.DateTimeField(db_index=True, core=True)
     end = models.DateTimeField(core=True)
     tags = models.ManyToManyField(Tag)
+
+    def __str__(self):
+        return '%s: %s' % (self.daterange(), self.tags.all())
+
+    def daterange(self):
+        return daterange(self.start, self.end)
 
     class Meta:
         ordering = [ 'start' ]

@@ -1,11 +1,17 @@
+from __future__ import absolute_import
+
 from datetime import datetime
 
 from imagestore.atomfeed import atomtime
 from imagestore.namespace import xhtml
 import imagestore.EXIF as EXIF
 
-def datetime(dt):
+def html_datetime(dt):
     return xhtml.abbr({ 'class': 'dtbegin', 'title': atomtime(dt) }, str(dt))
+
+def html_daterange(dr):
+    return xhtml.span({ 'class': 'daterange' },
+                      html_datetime(dr.start), ' - ', html_datetime(dr.end))
 
 def exif(exif):
     """ Generate a simple xhtml microformat encoding for exif data """
@@ -22,7 +28,7 @@ def exif(exif):
             len(v.values) > 200):
             continue
 
-        dl.append(xhtml.dt(xhtml.abbr({'title': '0x%04x' % v.tag,
+        dl.append(xhtml.dt(xhtml.abbr({'title': '%s 0x%04x' % (k.split(' ')[0], v.tag),
                                        'class': 'type-%s' % EXIF.FIELD_TYPES[v.field_type][1]},
                                       k)))
 

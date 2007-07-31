@@ -37,11 +37,16 @@ class RestBase(object):
 
     def get_content_length(self):
         return None
+
+    def get_doctype(self):
+        return None
     
     def do_GET(self, *args, **kwarg):
         resp = HttpResponse(mimetype = self.content_type())
 
         resp.write('<?xml version="1.0" encoding="utf-8"?>\n')
+        if self.get_doctype():
+            resp.write(self.get_doctype())
         ElementTree(self.render()).write(resp, 'utf-8')
         resp.write('\n')
         

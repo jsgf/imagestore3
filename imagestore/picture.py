@@ -4,7 +4,7 @@ import sha, md5
 import string, re
 import types
 from cStringIO import StringIO
-from datetime import datetime
+import datetime as dt
 from xml.etree.cElementTree import ElementTree
 
 from django.db import models
@@ -24,7 +24,9 @@ from imagestore.RestBase import (RestBase, HttpResponseBadRequest,
 from imagestore import urn, EXIF, image, microformat
 
 from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
+from imagestore.htmllist import HtmlEntry
 from imagestore.namespace import atom, imst, xhtml
+from imagestore.daterange import daterange
 
 class FilteredPictures(models.Manager):
     @staticmethod
@@ -145,6 +147,9 @@ class Picture(models.Model):
         except KeyError:
             ext = ''
         return '%spic/%s%s' % (self.get_absolute_url(), size, ext)
+
+    def get_exif_url(self):
+        return '%sexif/' % self.get_absolute_url()
 
     def get_comment_url(self):
         return '%scomment/' % self.get_absolute_url()
@@ -268,7 +273,7 @@ def picture_upload(self, derived_from=None, *args, **kwargs):
     if test_exists(hash):
         return HttpResponseConflict('Picture %s already exists\n' % hash)
 
-    title = self.request.POST.get('title')
+    title = self.request.POST.get('title', '')
     print 'title=%s' % title
 
     file = StringIO(data)
@@ -306,26 +311,18 @@ class PictureEntry(AtomEntry):
     def get_last_modified(self):
         return self.picture.modified_time
 
-    def render(self):
+    def render_html(self):
         p = self.picture
         assert p is not None
 
-        def atomcat(t):
-            attr = { 'term': t.canonical() }
-            if t.description:
-                attr['label'] = t.description
-
-            return atom.category(attr)
-
-        atomtags = [ atomcat(tag) for tag in p.effective_tags() ]
+        size = 'tiny'
+        img = p.image(size)
+        (width, height) = img.dimensions()
+        
         htmltags = xhtml.ul([ xhtml.li(xhtml.a({ 'href':
                                                  PictureSearchFeed(search=tag.canonical()).get_absolute_url() },
                                                tag.render()))
                               for tag in p.effective_tags() ])
-
-        photog = ''
-        if p.photographer is not None:
-            photog = [ xhtml.dt('Photographer'), xhtml.dd(microformat.hcard(p.photographer)) ]
 
         html_derivatives = []
         if p.derivatives.count() != 0:
@@ -334,6 +331,10 @@ class PictureEntry(AtomEntry):
                                                                       '%d: %s' % (deriv.id, deriv.title)))
                                                      for deriv in p.derivatives.all() ])) ]
 
+        photog = ''
+        if p.photographer is not None:
+            photog = [ xhtml.dt('Photographer'), xhtml.dd(microformat.hcard(p.photographer)) ]
+
         derived_from = []
         if p.derived_from is not None:
             derived_from = [ xhtml.dt('Derived from'),
@@ -341,10 +342,7 @@ class PictureEntry(AtomEntry):
                                               '%d: %s' % (p.derived_from.id,
                                                           p.derived_from.title))) ]
 
-        size = 'tiny'
-        img = p.image(size)
-        (width, height) = img.dimensions()
-        
+
         content = [ xhtml.div({'class': 'image' },
                               xhtml.a({'href': p.get_absolute_url()},
                                       xhtml.img({'src': p.get_picture_url(size),
@@ -357,22 +355,50 @@ class PictureEntry(AtomEntry):
                              photog,
                              derived_from,
                              html_derivatives,
+                             xhtml.dt('Taken'),
+                             xhtml.dd(microformat.html_datetime(p.created_time)),
+                             xhtml.dt('Uploaded'),
+                             xhtml.dd(microformat.html_datetime(p.uploaded_time)),
                              xhtml.dt('Camera'),
                              xhtml.dd(xhtml.a({'href': p.camera.get_absolute_url()},
-                                              p.camera.nickname)),
+                                              p.camera.nickname),
+                                      ' ',
+                                      xhtml.a({'href': p.get_exif_url() }, 'Exif')),
                              xhtml.dt({'class': 'tags'}, 'Tags'),
-                             xhtml.dd(htmltags)),
+                             xhtml.dd(htmltags),
+                             xhtml.dt('Description'),
+                             xhtml.dd(xhtml.p(p.description)),
+                             ),
+                    
 
                     xhtml.a({'href': p.get_comment_url()},
                             '%d comments' % p.comment_set.count()) ]
+        return content
+    
+    def render(self):
+        p = self.picture
+        assert p is not None
+
+        def atomcat(t):
+            attr = { 'term': t.canonical() }
+            if t.description:
+                attr['label'] = t.description
+
+            return atom.category(attr)
+
+        atomtags = [ atomcat(tag) for tag in p.effective_tags() ]
 
         related = [ atom.link({'rel': 'related',
                                'href': deriv.get_absolute_url(),
                                'class': 'derivative' })
                     for deriv in p.derivatives.all() ]
 
+        content = self.render_html()
+
         ret = atom.entry(atom.id(self.picture.get_urn()),
-                         atom.title(p.title or 'untitled #%d' % p.id),
+                         atom.title(p.title
+                                    and '%d: %s' % (p.id, p.title)
+                                    or 'untitled #%d' % p.id),
                          atom.author(atomperson(p.owner)),
                          atom.updated(atomtime(p.modified_time)),
                          atom.published(atomtime(p.created_time)),
@@ -381,7 +407,7 @@ class PictureEntry(AtomEntry):
                          atom.link({'rel': 'comments', 'href': p.get_comment_url() }),
                          atom.link({'rel': 'self', 'href': p.get_absolute_url()}),
                          related,
-                         atom.content({ 'type': 'xhtml' }, xhtml.div(content))
+                         atom.content({ 'type': 'xhtml' }, xhtml.div(*content))
                          )
         if p.camera:
             ret.append(atom.link({ 'rel': 'camera', 'href': p.camera.get_absolute_url() }))
@@ -391,7 +417,7 @@ class PictureEntry(AtomEntry):
     def do_POST(self, *args, **kwargs):
         return picture_upload(self, *args, **kwargs)
 
-class PictureExif(RestBase):
+class PictureExif(HtmlEntry):
     __slots__ = [ 'picture' ]
     
     def urlparams(self, kwargs):
@@ -403,13 +429,8 @@ class PictureExif(RestBase):
     def get_Etag(self):
         return '%s.exif' % self.picture.sha1hash
 
-    def do_GET(self, *args, **kwargs):
-        p = self.picture
-
-        ret = HttpResponse(mimetype='application/xhtml+xml')
-        ElementTree(microformat.exif(p.exif())).write(ret)
-
-        return ret
+    def render(self):
+        return microformat.exif(self.picture.exif())
 
 class PictureImage(RestBase):
     """ Return the actual bits of a picture """
@@ -530,6 +551,12 @@ class PictureFeed(AtomFeed):
     def do_POST(self, *args, **kwargs):
         return picture_upload(self, *args, **kwargs)
     
+class ParserException(Exception):
+    pass
+
+class TokenException(ParserException):
+    pass
+
 class SearchParser(object):
     __slots__ = [ 'search', 'query' ]
     
@@ -604,10 +631,32 @@ class SearchParser(object):
         TOK_camera      = re.compile(r'camera:(?P<v>[a-z0-9 _-]+)', re.I)
         TOK_reserved    = re.compile(r'(?P<v>[a-z]+):', re.I)
         
-        tagre           = '[a-z][a-z0-9_ -]+'
+        tagre           = '[a-z][a-z0-9_ -]*'
         TOK_tag         = re.compile(r'(?P<v>%s)' % tagre, re.I | re.U)
         TOK_qualtag     = re.compile(r'(?P<v>(?::%s)+:*\*?)' % tagre,
                                      re.I | re.U)
+
+        # DATE := -?(YYYY-MM-DDTHH:MM:SS+TZ|(now|today))
+        datere          = r'''
+          (?:(?:\d{4}(?:-\d{1,2}(?:-\d{1,2}(?:T\d{1,2}:\d{1,2}(?::\d{1,2})?)?)?)?(?:\+(?:[+-])?\d{1,2})?)
+        | (?:today|now))
+        '''
+        # DATERANGE := DATE
+        #            | DATE,DATE
+        #            | (day|week|month|year)':'DATE
+        daterange_re       = r'''
+         (?:(?P<start>%(re)s),(?P<end>%(re)s))
+        |(?:(?P<date>%(re)s)
+        |(?:(?P<period>day|week|month|year):(?P<per_date>-?%(re)s)))
+        ''' % { 're': datere }
+        # DATERELATION := (<|<=|=|>=|>)? DATERANGE
+        daterel         = r'(?:(?P<rel><|<=|=|>=|>|)%(dr)s)' % { 'dr': daterange_re }
+
+        #print daterel
+        
+        TOK_created     = re.compile(r'(?P<op>created):(?P<v>%s)' % daterel, re.I | re.X)
+        TOK_modified    = re.compile(r'(?P<op>modified):(?P<v>%s)' % daterel, re.I | re.X)
+        TOK_uploaded    = re.compile(r'(?P<op>uploaded):(?P<v>%s)' % daterel, re.I | re.X)
         
         TOK_id          = re.compile(r'(?P<v>\d+)')
         
@@ -624,6 +673,7 @@ class SearchParser(object):
         # Order of tokens matters; need to put predicate: entries first
         # so that tags don't get confused
         tokens = [ TOK_owner, TOK_vis, TOK_camera, TOK_photog,
+                   TOK_created, TOK_modified, TOK_uploaded,
                    TOK_reserved,
                    TOK_tag, TOK_qualtag, TOK_id,
                    TOK_sub, TOK_and, TOK_or, TOK_not,
@@ -636,14 +686,13 @@ class SearchParser(object):
         def tok_consume():
             " Consume a token from the input string "
             self.search = self.search.lstrip()
-            
             for t in tokens:
                 m = t.match(self.search)
                 if m is not None:
                     self.search = self.search[m.end():]
-                    return (t, m.group('v'))
+                    return (t, m.group('v'), m.groupdict())
 
-            raise Exception('failed to match token with remains "%s"' % self.search)
+            raise TokenException('failed to match token with remains "%s"' % self.search)
 
         def tok_next(expect = None):
             " Return the next token "
@@ -656,7 +705,7 @@ class SearchParser(object):
                 ret = tok_consume()
 
             if expect is not None and expect is not ret[0]:
-                raise Exception('unexpected token: wanted %s, got %s', expect, ret[0])
+                raise ParserException('unexpected token: wanted %s, got %s', expect, ret[0])
             
             #print 'returning token %s %s' % ret
 
@@ -686,8 +735,10 @@ class SearchParser(object):
         def parse_catExpr():
             q = parse_orExpr()
 
-            while tok_LA(1)[0] in (TOK_vis, TOK_camera, TOK_owner, TOK_tag, TOK_photog,
-                                   TOK_qualtag, TOK_not, TOK_id, TOK_lp, TOK_comma):
+            while tok_LA(1)[0] in (TOK_owner, TOK_vis, TOK_camera, TOK_photog,
+                                   TOK_created, TOK_modified, TOK_uploaded,
+                                   TOK_tag, TOK_qualtag, TOK_id, TOK_lp,
+                                   TOK_comma):
                 if tok_LA(1)[0] is TOK_comma:
                     tok_next(TOK_comma)
                 q = q & parse_orExpr()
@@ -721,7 +772,7 @@ class SearchParser(object):
             return q
 
         def parse_term():
-            tok,val = tok_LA(1)
+            tok,val,match = tok_LA(1)
 
             if tok is TOK_lp:
                 tok_next(TOK_lp)
@@ -767,18 +818,90 @@ class SearchParser(object):
                 tok_next(tok)
                 q = Q(id = int(val))
 
+            elif tok in (TOK_created, TOK_modified, TOK_uploaded):
+                tok_next(tok)
+                q = handle_datetime(match)
+
             elif tok is TOK_eof:
                 tok_next(tok)
                 q = Q()
 
             elif tok is TOK_reserved:
-                raise Exception('reserved predicate "%s" used: '
+                raise ParserException('reserved predicate "%s" used: '
                                 'did you mean to use a :qualified:tag?' % val)
 
             else:
-                raise Exception('unexpected token "%s" (%s)' % (tok, val))
+                print 'tok=%s lp=%s rp=%s' % (tok, TOK_lp, TOK_rp)
+                raise ParserException('unexpected token "%s" (%s), next %s, search=\"%s\"' % (tok, val, tok_LA(1)[0], self.search))
 
             return q
+
+        def handle_datetime(groups):
+            def parse_date(d):
+                pieces = [ ('%Y', 'year'), ('-%m', 'month'), ('-%d', 'day'),
+                           ('T%H:%M', None), (':%S', None) ]
+                if d in ('today', 'now'):
+                    return daterange(d)
+                if d is None:
+                    return None
+                
+                ret = None
+                fmt = ''
+
+                for p, period in pieces:
+                    fmt += p
+                    try:
+                        time=dt.datetime.strptime(d, fmt)
+                        if period is not None:
+                            return daterange(time, period=period)
+                        else:
+                            return daterange(time, time)
+                    except ValueError:
+                        continue
+
+                print 'failed to parse "%s"' % d
+                return None
+            
+            print 'groups=%s' % (groups)
+
+            start = parse_date(groups.get('start'))
+            end = parse_date(groups.get('end'))
+            date = parse_date(groups.get('date'))
+            period = groups.get('period')
+            per_date = parse_date(groups.get('per_date'))
+
+            dr = None
+            if start and end:
+                dr = daterange(start.start, end.start)
+            elif date:
+                dr = date
+            elif per_date and period:
+                dr = daterange(start=per_date.start, period=period)
+
+            if dr is None:
+                return Q()      # bad date range?
+
+            print 'daterange=%s' % dr
+            
+            field = '%s_time' % groups.get('op')
+            arg = (dr.start, dr.end)
+            cmp = 'range'
+            
+            rel = groups.get('rel')
+            if rel == '<':
+                arg = dr.start
+                cmp = 'lt'
+            elif rel == '<=':
+                arg = dr.end
+                cmp = 'lt'
+            elif rel == '>':
+                arg = dr.end
+                cmp = 'gte'
+            elif rel == '>=':
+                arg = dr.start
+                cmp = 'gte'
+                
+            return Q(**{'%s__%s'%(field, cmp): arg})
         
         return parse_expr()
         

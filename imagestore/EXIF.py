@@ -88,8 +88,9 @@
 # 15-FEB-04 CEC Finally fixed bit shift warning by converting Y to 0L.
 #
 
+from __future__ import absolute_import
+
 from datetime import datetime
-import types
 
 # field type descriptions as (length, abbreviation, full name) tuples
 FIELD_TYPES=(
