@@ -2,6 +2,10 @@ from __future__ import absolute_import
 
 import string
 
+from ElementBuilder import Namespace
+from cStringIO import StringIO
+from xml.etree.cElementTree import ElementTree
+
 from django.db import models
 from django.db.models import permalink
 from django.contrib.auth.models import User
@@ -13,6 +17,7 @@ from imagestore.user import get_url_user
 from imagestore.htmllist import HtmlList, HtmlEntry
 from imagestore import microformat
 from imagestore.daterange import daterange
+from imagestore.RestBase import RestBase
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -128,26 +133,78 @@ class CameraTags(models.Model):
     applied to that picture."""
     
     camera = models.ForeignKey(Camera, edit_inline=models.STACKED)
-    start = models.DateTimeField(db_index=True, core=True)
-    end = models.DateTimeField(core=True)
     tags = models.ManyToManyField(Tag)
 
+    # start and end are always UTC
+    start = models.DateTimeField(db_index=True, core=True)
+    end = models.DateTimeField(core=True)
+
+    #timezone = models.IntegerField("Timezone of camera's clock withing a time range",
+    #                               null=True)
+    title = models.CharField(maxlength=127, blank=True)
+    
     def __str__(self):
         return '%s: %s' % (self.daterange(), self.tags.all())
 
     def daterange(self):
         return daterange(self.start, self.end)
 
+    def html(self, ns=xhtml):
+        return ns.div(ns.ul([ ns.li(t.render()) for t in self.tags.all() ]))
+
     class Meta:
         ordering = [ 'start' ]
 
+
+class CameraTimeline(RestBase):
+    def __init__(self):
+        RestBase.__init__(self)
+
+    def content_type(self):
+        return 'application/xml'
+
+    def urlparams(self, kwargs):
+        self.urluser = get_url_user(kwargs)
+        self.camera = get_url_camera(self.urluser, kwargs)
+
+    def render(self):
+        timeline = Namespace()
+        html = Namespace()
+        
+        def fmt(dt):
+            return dt.strftime('%b %d %Y %T')
+
+        def xmlstring(et):
+            s = StringIO()
+            ElementTree(et).write(s)
+            return s.getvalue()
+
+        camtags = CameraTags.objects
+        if self.urluser:
+            camtags.filter(camera__owner = self.urluser)
+        if self.camera:
+            camtags.filter(camera = camera)
+        
+        ret = timeline.data([ timeline.event(xmlstring(ct.html(html)),
+                                             start = fmt(ct.start),
+                                             end = fmt(ct.end),
+                                             title = '%s: %s' % (ct.camera.nickname,
+                                                                 ct.title or ', '.join([ t.description or t.canonical() for t in ct.tags.all()[:4] ])),
+                                             isDuration = 'true')
+                              for ct in camtags.all() ])
+
+        return ret
+        
 __all__ = [ 'Camera', 'get_camera', 'CameraTags' ]
 
 cameralist      = CameraList()
 camera          = CameraEntry()
+cameratimeline  = CameraTimeline()
 
 urlpatterns = \
   patterns('',
            ('^$',                               cameralist),
-           ('^(?P<camnick>[a-zA-Z0-9_-]+)/',    camera),
+           ('timeline/$',                       cameratimeline),
+           ('^(?P<camnick>[a-zA-Z0-9_-]+)/$',   camera),
+           ('^(?P<camnick>[a-zA-Z0-9_-]+)/timeline/$',    cameratimeline),
            )

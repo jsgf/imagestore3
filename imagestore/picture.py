@@ -16,6 +16,8 @@ from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 from django.core.exceptions import ObjectDoesNotExist
 
+from ElementBuilder import Namespace
+
 from imagestore.media import Media
 from imagestore.tag import Tag
 from imagestore.RestBase import (RestBase, HttpResponseBadRequest,
@@ -160,6 +162,14 @@ class Picture(models.Model):
     def get_comment_url(self):
         return '%scomment/' % self.get_absolute_url()
 
+    def render_img(self, size='thumb', ns=xhtml):
+        img = self.image(size)
+        width, height = img.dimensions()
+        return ns.img(src=self.get_picture_url(size),
+                      width=str(width), height=str(height),
+                      alt=self.description or self.title,
+                      title=self.title)
+
     def chunks(self, variant='orig'):
         return self.media(variant).chunks()
 
@@ -174,7 +184,7 @@ class Picture(models.Model):
         return EXIF.process_file(StringIO(img))
 
     def tags_query(self):
-        ''' Returns Tag query to select this picture's tags. '''
+        """ Returns Tag query to select this picture's tags. """
         return Q(picture = self)
 
     def camera_tags_query(self):
@@ -280,7 +290,6 @@ def picture_upload(self, derived_from=None, *args, **kwargs):
         return HttpResponseConflict('Picture %s already exists\n' % hash)
 
     title = self.request.POST.get('title', '')
-    print 'title=%s' % title
 
     file = StringIO(data)
     p = image.importer(file, owner=self.urluser, title=title,
@@ -351,10 +360,7 @@ class PictureEntry(AtomEntry):
 
         content = [ xhtml.div({'class': 'image' },
                               xhtml.a({'href': p.get_absolute_url()},
-                                      xhtml.img({'src': p.get_picture_url(size),
-                                                 'width': str(width),
-                                                 'height': str(height),
-                                                 'alt': p.title }))),
+                                      p.render_img())),
                     xhtml.dl({ 'class': 'metadata' },
                              xhtml.dt('Owner' ),
                              xhtml.dd({'class': 'owner' }, microformat.hcard(p.owner)),
@@ -540,8 +546,7 @@ class PictureFeed(AtomFeed):
         
         if self.urluser is not None:
             print 'filtering user %s' % self.urluser.username
-            filter = filter & (Q(owner = self.urluser) |
-                               Q(photographer = self.urluser))
+            filter = filter & Q(owner = self.urluser)
 
         return filter
     
@@ -949,6 +954,41 @@ class PictureSearchFeed(PictureFeed):
     def title(self):
         return 'Pictures: "%s": %d results' % (self.search, Picture.objects.filter(self.filter()).distinct().count())
 
+class PictureTimeline(RestBase):
+    def content_type(self):
+        return 'application/xml'
+
+    def urlparams(self, kwargs):
+        from imagestore.user import get_url_user
+
+        self.urluser = get_url_user(kwargs)
+
+    def filter(self):
+        filter = Q()
+        
+        if self.urluser is not None:
+            print 'filtering user %s' % self.urluser.username
+            filter = filter & Q(owner = self.urluser)
+    
+        return filter
+
+    def render(self):
+        timeline = Namespace()
+        html = Namespace()
+        def fmt(dt):
+            return dt.strftime('%a %b %d %Y %T')
+
+        def xmlstring(et):
+            s = StringIO()
+            ElementTree(et).write(s)
+            return s.getvalue()
+
+        pics = Picture.objects.vis_filter(self.authuser, self.filter()).distinct()
+        return timeline.data([ timeline.event(xmlstring(p.render_img('tiny',ns=html)),
+                                              title=p.title,
+                                              start=fmt(p.created_time))
+                               for p in pics ])
+    
 class Comment(models.Model):
     comment = models.TextField()
     user = models.ForeignKey(User)
@@ -989,6 +1029,7 @@ class CommentEntry(AtomEntry):
 picturefeed     = PictureFeed()
 picturesearch   = PictureSearchFeed(summary=False)
 picturesummary  = PictureSearchFeed(summary=True)
+picturetimeline = PictureTimeline()
 picture         = PictureEntry()
 pictureexif     = PictureExif()
 pictureimage    = PictureImage()
@@ -998,8 +1039,9 @@ comment         = CommentEntry()
 urlpatterns = \
   patterns('',
            ('^$',                       picturefeed),
-           ('^-/(?P<search>.*)/$',     picturesearch),
-           ('^--/(?P<search>.*)/$',    picturesummary),
+           ('^timeline/',               picturetimeline),
+           ('^-/(?P<search>.*)/$',      picturesearch),
+           ('^--/(?P<search>.*)/$',     picturesummary),
            
            ('(?P<picid>[0-9]+)/$',                                      picture),
            ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),

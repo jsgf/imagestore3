@@ -1,10 +1,8 @@
 from django.conf.urls.defaults import include, patterns
 
 urlpatterns = patterns('',
-    # Example:
-    # (r'^imagestore/', include('imagestore3.foo.urls')),
+    (r'^static/(?P<path>.*)$', 'django.views.static.serve', {'document_root': '/home/jeremy/hg/imagestore3/static/'}),
 
-    # Uncomment this for admin:
      (r'^admin/', include('django.contrib.admin.urls')),
 
      (r'^imagestore/', include('imagestore.urls')),
