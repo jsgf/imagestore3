@@ -60,6 +60,12 @@ class Picture(models.Model):
     RESTRICTED=1
     PRIVATE=2
 
+    @staticmethod
+    def str_visibility(v):
+        return { Picture.PUBLIC: 'public',
+                 Picture.RESTRICTED: 'restricted',
+                 Picture.PRIVATE: 'private' }[v]
+
     objects = NotDeletedPictures()
     all_objects = FilteredPictures()
 
@@ -350,15 +356,27 @@ class PictureEntry(AtomEntry):
                                                  'height': str(height),
                                                  'alt': p.title }))),
                     xhtml.dl({ 'class': 'metadata' },
-                             xhtml.dt({'class': 'owner' }, 'Owner' ),
-                             xhtml.dd(microformat.hcard(p.owner)),
+                             xhtml.dt('Owner' ),
+                             xhtml.dd({'class': 'owner' }, microformat.hcard(p.owner)),
                              photog,
                              derived_from,
                              html_derivatives,
                              xhtml.dt('Taken'),
-                             xhtml.dd(microformat.html_datetime(p.created_time)),
+                             xhtml.dd({'class': 'created-time'},
+                                      microformat.html_datetime(p.created_time)),
                              xhtml.dt('Uploaded'),
-                             xhtml.dd(microformat.html_datetime(p.uploaded_time)),
+                             xhtml.dd({'class': 'uploaded-time'},
+                                      microformat.html_datetime(p.uploaded_time)),
+                             xhtml.dt('Modified'),
+                             xhtml.dd({'class': 'modified-time'},
+                                      microformat.html_datetime(p.modified_time)),
+                             xhtml.dt('Orientation'),
+                             xhtml.dd({'class': 'orientation'},
+                                      str(p.orientation)),
+                             xhtml.dt('Visibility'),
+                             xhtml.dd(xhtml.abbr({'class': 'visibility',
+                                                  'title': str(p.visibility) },
+                                                 Picture.str_visibility(p.visibility))),
                              xhtml.dt('Camera'),
                              xhtml.dd(xhtml.a({'href': p.camera.get_absolute_url()},
                                               p.camera.nickname),
@@ -403,6 +421,8 @@ class PictureEntry(AtomEntry):
                          atom.updated(atomtime(p.modified_time)),
                          atom.published(atomtime(p.created_time)),
                          imst.uploaded(atomtime(p.uploaded_time)),
+                         imst.visibility(Picture.str_visibility(p.visibility)),
+                         imst.orientation(str(p.orientation)),
                          atomtags,
                          atom.link({'rel': 'comments', 'href': p.get_comment_url() }),
                          atom.link({'rel': 'self', 'href': p.get_absolute_url()}),
