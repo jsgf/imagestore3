@@ -27,7 +27,7 @@ from imagestore import urn, EXIF, image, microformat
 
 from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
 from imagestore.htmllist import HtmlEntry
-from imagestore.namespace import atom, imst, xhtml
+from imagestore.namespace import atom, imst, xhtml, opensearch
 from imagestore.daterange import daterange
 
 class FilteredPictures(models.Manager):
@@ -61,6 +61,10 @@ class Picture(models.Model):
     PUBLIC=0
     RESTRICTED=1
     PRIVATE=2
+
+    def __init__(self, *args, **kwargs):
+        self._camera_tags_query = None  # cache tags query
+        super(Picture,self).__init__(*args, **kwargs)
 
     @staticmethod
     def str_visibility(v):
@@ -199,10 +203,12 @@ class Picture(models.Model):
         Return list of tags conferred on this picture by the camera it
         was taken with.
         """
-        ct = Tag.objects.filter(self.camera_tags_query())
-        ct = ct.distinct().order_by('id')
-        
-        return ct
+        if self._camera_tags_query is None:
+            q = Tag.objects.filter(self.camera_tags_query())
+            q = q.distinct().order_by('id')
+            self._camera_tags_query = q
+            
+        return self._camera_tags_query
 
     def effective_tags(self):
         """
@@ -531,7 +537,11 @@ class PictureImage(RestBase):
         return ret
         
 class PictureFeed(AtomFeed):
-    __slots__ = [ 'urluser' ]
+    __slots__ = [ 'urluser', '_query' ]
+
+    def __init__(self):
+        self._query = None
+        super(PictureFeed, self).__init__()
 
     def title(self):
         return 'Pictures'
@@ -567,10 +577,53 @@ class PictureFeed(AtomFeed):
                           xhtml.input({'type': 'submit', 'name': 'upload',
                                        'value': 'Upload'}))
 
+    def results(self):
+        if self._query is None:        
+            q = Picture.objects.vis_filter(self.authuser, self.filter())
+            q = q.distinct().select_related()
+            self._query = q
+            
+        return self._query
+
+    def limits(self):
+        start = 0
+        limit = 50
+        try:
+            limit = int(self.request.GET.get('limit', str(limit)))
+            limit = min(limit, 100)
+        except ValueError:
+            pass
+
+        try:
+            start = int(self.request.GET.get('start', str(start)))
+        except ValueError:
+            pass
+        
+        return (start,limit)
+    
+    def opensearch(self):
+        count = self.results().count()
+        start,limit = self.limits()
+
+        return [ opensearch.totalResults(str(count)),
+                 opensearch.startIndex(str(start)),
+                 opensearch.itemsPerPage(str(limit)) ]
+
     def entries(self, **kwargs):
-        filter = self.filter()
-        res = Picture.objects.vis_filter(self.authuser, filter).distinct()
-        return [ PictureEntry(p) for p in res ]
+        order = None
+
+        orders = ('created_time', 'uploaded_time', 'modified_time', 'id')
+
+        order = self.request.GET.get('order', '-created_time')
+
+        if not re.match('-?(%s)$' % '|'.join(orders), order):
+            order = orders[0]
+
+        start,limit = self.limits()
+
+        res = self.results()
+        
+        return [ PictureEntry(p) for p in res[start : start+limit] ]
 
     
     def do_POST(self, *args, **kwargs):
@@ -952,7 +1005,7 @@ class PictureSearchFeed(PictureFeed):
         return super(PictureSearchFeed, self).filter() & self.query
 
     def title(self):
-        return 'Pictures: "%s": %d results' % (self.search, Picture.objects.filter(self.filter()).distinct().count())
+        return 'Pictures: "%s": %d results' % (self.search, self.results().count())
 
 class PictureTimeline(RestBase):
     def content_type(self):

@@ -31,9 +31,9 @@ class Tag(models.Model):
             ret = self.scope.canonical() + ret
         return ret
 
-    def render(self):
+    def render(self, ns=xhtml):
         if self.description is not None:
-            return xhtml.abbr({'title': self.canonical()}, self.description)
+            return ns.abbr({'title': self.canonical()}, self.description)
         else:
             return self.canonical()
         

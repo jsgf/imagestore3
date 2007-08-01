@@ -150,7 +150,7 @@ class CameraTags(models.Model):
         return daterange(self.start, self.end)
 
     def html(self, ns=xhtml):
-        return ns.div(ns.ul([ ns.li(t.render()) for t in self.tags.all() ]))
+        return ns.div(ns.ul([ ns.li(t.render(ns=ns)) for t in self.tags.all() ]))
 
     class Meta:
         ordering = [ 'start' ]
@@ -184,12 +184,16 @@ class CameraTimeline(RestBase):
             camtags.filter(camera__owner = self.urluser)
         if self.camera:
             camtags.filter(camera = camera)
+
+        def ct_title(ct):
+            return ct.title or ', '.join([ t.description or t.canonical()
+                                           for t in ct.tags.all()[:4] ])
         
         ret = timeline.data([ timeline.event(xmlstring(ct.html(html)),
                                              start = fmt(ct.start),
                                              end = fmt(ct.end),
                                              title = '%s: %s' % (ct.camera.nickname,
-                                                                 ct.title or ', '.join([ t.description or t.canonical() for t in ct.tags.all()[:4] ])),
+                                                                 ct_title(ct)),
                                              isDuration = 'true')
                               for ct in camtags.all() ])
 

@@ -4,7 +4,7 @@ from django.http import HttpRequest, HttpResponse
 
 import ElementBuilder
 from imagestore.RestBase import RestBase
-from imagestore.namespace import atom, xhtml, opensearch
+from imagestore.namespace import atom, xhtml
 
 #content_type = 'application/xml'
 content_type = 'application/atom+xml'
@@ -13,7 +13,7 @@ class AtomFeed(RestBase):
     __slots__ = [ 'title', 'subtitle', 'uri' ]
 
     def __init__(self):
-        RestBase.__init__(self)
+        super(AtomFeed, self).__init__()
 
     def title(self):
         return ''
@@ -32,12 +32,15 @@ class AtomFeed(RestBase):
 
     def content_type(self):
         return content_type
+
+    def opensearch(self):
+        return None
     
     def render(self):
         entries = self.entries()
 
         feed = atom.feed(self.preamble(),
-                         opensearch.totalResults('%d' % len(entries)),
+                         self.opensearch(),
                          atom.title(self.title()),
                          atom.subtitle(self.subtitle()),
                          atom.link({'ref': 'self', 'href': self.request.path}),
@@ -47,7 +50,7 @@ class AtomFeed(RestBase):
 
 class AtomEntry(RestBase):
     def __init__(self):
-        RestBase.__init__(self)
+        super(AtomEntry, self).__init__()
 
     def content_type(self):
         return content_type

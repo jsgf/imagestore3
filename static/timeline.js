@@ -1,7 +1,6 @@
 var tl;
 function onLoad() {
   var pictureSource = new Timeline.DefaultEventSource();
-  var cameraSource = new Timeline.DefaultEventSource();
   var theme = Timeline.ClassicTheme.create();
   theme.event.bubble.width = 330;
   theme.event.bubble.height = 270;
@@ -9,8 +8,8 @@ function onLoad() {
   var bandInfos = [
     Timeline.createBandInfo({
 	theme: theme,
-        eventSource:    cameraSource,
-        width:          "100px", 
+        eventSource:    pictureSource,
+        width:          "400px", 
         trackHeight:    1.3,
         trackGap:       0.2,
         intervalUnit:   Timeline.DateTime.DAY, 
@@ -19,16 +18,7 @@ function onLoad() {
     Timeline.createBandInfo({
 	theme: theme,
         eventSource:    pictureSource,
-        width:          "320px", 
-        trackHeight:    1.3,
-        trackGap:       0.2,
-        intervalUnit:   Timeline.DateTime.DAY, 
-        intervalPixels: 200
-    }),
-    Timeline.createBandInfo({
-	theme: theme,
-        eventSource:    pictureSource,
-        width:          "40px", 
+        width:          "50px", 
         showEventText:  false,
         trackHeight:    0.7,
         trackGap:       0.2,
@@ -38,7 +28,7 @@ function onLoad() {
     Timeline.createBandInfo({
 	theme: theme,
         eventSource:    pictureSource,
-        width:          "40px", 
+        width:          "50px", 
         showEventText:  false,
         trackHeight:    0.5,
         trackGap:       0.2,
@@ -50,11 +40,9 @@ function onLoad() {
   bandInfos[1].highlight = true;
   bandInfos[2].syncWith = 0;
   bandInfos[2].highlight = true;
-  bandInfos[3].syncWith = 0;
-  bandInfos[3].highlight = true;
   tl = Timeline.create(document.getElementById("my-timeline"), bandInfos);
   Timeline.loadXML('/imagestore/image/timeline/', function(xml, url) { pictureSource.loadXML(xml, url); });
-  Timeline.loadXML('/imagestore/camera/timeline/', function(xml, url) { cameraSource.loadXML(xml, url); });
+  Timeline.loadXML('/imagestore/camera/timeline/', function(xml, url) { pictureSource.loadXML(xml, url); });
 }
 
 var resizeTimerID = null;

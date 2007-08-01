@@ -130,6 +130,10 @@ URL encoding:
     (would be more inclined towards /q/ and /s/ if GData didn't set a
     precident)
 
+Limits:
+	?start=entry
+	 limit=count
+	 format=atom|html|...?
 
 RESOURCES
 ---------
