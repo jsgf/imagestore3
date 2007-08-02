@@ -33,7 +33,7 @@ class Tag(models.Model):
 
     def render(self, ns=xhtml):
         if self.description is not None:
-            return ns.abbr({'title': self.canonical()}, self.description)
+            return ns.dfn({'title': self.canonical()}, self.description)
         else:
             return self.canonical()
         

@@ -7,7 +7,7 @@ from imagestore.namespace import xhtml
 import imagestore.EXIF as EXIF
 
 def html_datetime(dt):
-    return xhtml.abbr({ 'class': 'dtbegin', 'title': atomtime(dt) }, str(dt))
+    return xhtml.dfn({ 'class': 'dtbegin', 'title': atomtime(dt) }, str(dt))
 
 def html_daterange(dr):
     return xhtml.span({ 'class': 'daterange' },
@@ -28,15 +28,15 @@ def exif(exif):
             len(v.values) > 200):
             continue
 
-        dl.append(xhtml.dt(xhtml.abbr({'title': '%s 0x%04x' % (k.split(' ')[0], v.tag),
-                                       'class': 'type-%s' % EXIF.FIELD_TYPES[v.field_type][1]},
-                                      k)))
+        dl.append(xhtml.dt(xhtml.dfn({'title': '%s 0x%04x' % (k.split(' ')[0], v.tag),
+                                      'class': 'type-%s' % EXIF.FIELD_TYPES[v.field_type][1]},
+                                     k)))
 
         if isinstance(v.values, list) and len(v.values) > 1:
             val = xhtml.ol([ xhtml.li(str(val)) for val in v.values ])
         elif isinstance(v.printable, datetime):
-            val = xhtml.abbr({ 'class': 'dtbegin', 'title': atomtime(v.printable)},
-                             str(v.printable))
+            val = xhtml.dfn({ 'class': 'dtbegin', 'title': atomtime(v.printable)},
+                            str(v.printable))
         else:
             val = str(v.printable)
 
