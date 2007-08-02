@@ -20,12 +20,6 @@ class RestBase(object):
     def __init__(self):
         self.authuser = None
 
-    def methods(self):
-        return ['GET', 'HEAD' ]
-
-    def not_allowed(self):
-        return HttpResponseNotAllowed(self.methods())
-
     def get_Etag(self):
         return None
 
@@ -44,7 +38,6 @@ class RestBase(object):
     def do_GET(self, *args, **kwarg):
         resp = HttpResponse(mimetype = self.content_type())
 
-        resp.write('<?xml version="1.0" encoding="utf-8"?>\n')
         if self.get_doctype():
             resp.write(self.get_doctype())
         ElementTree(self.render()).write(resp, 'utf-8')
@@ -59,15 +52,6 @@ class RestBase(object):
             resp['Content-Length'] = '0'
             
         return resp
-
-    def do_POST(self, *args, **kwargs):
-        return self.not_allowed()
-
-    def do_PUT(self, *args, **kwargs):
-        return self.not_allowed()
-
-    def do_DELETE(self, *args, **kwargs):
-        return self.not_allowed()
 
     @staticmethod
     def knobble(response):
@@ -105,6 +89,10 @@ class RestBase(object):
         self.args = args
         self.kwargs = kwargs
 
+        if not self.hasattr('do_%s' % request.method):
+            allowed = [ m.lstrip('do_') for m in dir(self) if m.startswith('do_') ]
+            return HttpResponseNotAllowed(allowed)
+        
         method = getattr(self, 'do_%s' % request.method)
 
         try:
