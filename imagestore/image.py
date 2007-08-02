@@ -32,13 +32,15 @@ fontsize = 12
 
 class Image(object):
     sizes = {
-        'thumb':    (160, 160),
-        'tiny':     (320, 240),
-        'small':    (640, 480),
-        'medium':   (800, 600),
-        'large':    (1024, 768),
-        'full':     (10000, 10000),
-        'orig':     (10000, 10000),
+        'icon':         (   75,    75, 1),
+        'stamp':        (  100,   100, 1),
+        'thumb':        (  160,   160, 0),
+        'tiny':         (  320,   240, 0),
+        'small':        (  640,   480, 0),
+        'medium':       (  800,   600, 0),
+        'large':        ( 1024,   768, 0),
+        'full':         (10000, 10000, 0),
+        'orig':         (10000, 10000, 0),
         }
 
     def __init__(self, pic, size):
@@ -64,11 +66,15 @@ class StillImage(Image):
             (w, h) = (h, w)
 
         # scale size
-        (sw, sh) = Image.sizes[self.size]
+        (sw, sh, sq) = Image.sizes[self.size]
 
         # no scaling if original is smaller than output
         if w < sw and h < sw:
             return (w, h)
+
+        if sq:
+            assert sw == sh
+            return (sw, sh)
 
         fx = sw / float(w)
         fy = sh / float(h)
@@ -90,21 +96,31 @@ class StillImage(Image):
         if self.size == 'orig':
             return (p.media('orig'), p.mimetype)
 
-        (w, h) = Image.sizes[self.size]
-        short = self.size in ('thumb', 'tiny')	# short watermark
+        (w, h, sq) = Image.sizes[self.size]
+        short = min(w,h) < 400
 
         args = []
 
         # Strip all Exif
         args.append('-strip')
 
-        # Rotate first
-        if p.orientation != 0:
-            args.append('-rotate %d' % -p.orientation)
+        if sq:
+            maxdim = max(p.width, p.height)
+            mindim = min(p.width, p.height)
+            
+            if p.width > p.height:
+                args.append('-extract %dx%d+%d+0' % (p.height, p.height,
+                                                     (p.width - p.height)/2))
+            else:
+                args.append('-extract %dx%d+0+%d' % (p.width, p.width,
+                                                     (p.height - p.width)/2))
 
         # Then scale down
         if w < p.width or h < p.height:
-            args.append('-size %(w)dx%(h)d -resize %(w)dx%(h)d' % { 'w': w, 'h': h })
+            if p.orientation in (90, 270):
+                args.append('-size %(w)dx%(h)d -resize %(w)dx%(h)d' % { 'w': h, 'h': w })
+            else:
+                args.append('-size %(w)dx%(h)d -resize %(w)dx%(h)d' % { 'w': w, 'h': h })
 
         copyright = p.copyright
 
@@ -122,18 +138,22 @@ class StillImage(Image):
             fontsz = fontsz * .75
 
         # watermark
-        if self.size != 'thumb':
+        if min(w,h) >= 160:
             args.append('-box "#00000070" -fill white '
                         '-pointsize %(size)d -font %(font)s -encoding Unicode '
-                        '-draw "gravity SouthWest text 10,20 \\"%(brand)s#%(id)d %(copy)s\\"" '
+                        '-draw "gravity SouthWest text 10,10 \\"%(brand)s#%(id)d %(copy)s\\"" '
                         '-quality %(qual)d' % {
                 'font': font,
                 'size': fontsz,
                 'id': p.id,
                 'qual': jpeg_quality,
                 'copy': copyright,
-                'brand': brand
+                'brand': brand,
                 })
+
+        # Rotate
+        if p.orientation != 0:
+            args.append('-rotate %d' % -p.orientation)
 
         tmp = tempfile.NamedTemporaryFile(mode='wb', suffix='.%s' % self.extension)
         for c in p.chunks('orig'):
@@ -141,7 +161,7 @@ class StillImage(Image):
         tmp.flush()
 
         cmd = '%s %s %s jpg:-' % (convert, ' '.join(args), tmp.name)
-        #print 'cmd=%s' % cmd
+        print 'cmd=%s' % cmd
         result = os.popen(cmd)
 
         data = ''.join(result)

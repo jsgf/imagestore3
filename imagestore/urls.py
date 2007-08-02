@@ -31,9 +31,10 @@ index = Index()
 
 # Order matters here, so that we get the reverse lookup correct
 urlpatterns = patterns('',
-            ('^$', 'imagestore.urls.index'),
-            ('^camera/timeline/$', CameraTimeline()),
-            ('^image/', include('imagestore.picture')),
-            ('^user/', include('imagestore.user')),
+            ('^$',                      'imagestore.urls.index'),
+            #('ui/',                     include('imagestore.ui')),
+            ('^camera/timeline/$',      CameraTimeline()),
+            ('^image/',                 include('imagestore.picture')),
+            ('^user/',                  include('imagestore.user')),
             ('^(?P<urn>urn:[^/]*)/(?P<rest>.*)$', include('imagestore.urn')),
 )

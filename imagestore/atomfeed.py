@@ -39,9 +39,15 @@ class AtomFeed(RestBase):
     def render(self):
         entries = self.entries()
 
+        mod = self.get_last_modified()
+        updated=[]
+        if mod is not None:
+            updated = atom.updated(atomtime(mod))
+
         feed = atom.feed(self.preamble(),
                          self.opensearch(),
                          atom.title(self.title()),
+                         updated,
                          atom.subtitle(self.subtitle()),
                          atom.link({'ref': 'self', 'href': self.request.path}),
                          [ e.render() for e in entries ])

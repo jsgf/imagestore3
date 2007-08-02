@@ -8,8 +8,7 @@ import datetime as dt
 from xml.etree.cElementTree import ElementTree
 
 from django.db import models
-from django.db.models import permalink
-from django.db.models.query import Q, QNot
+from django.db.models import permalink, Q
 from django.http import (HttpRequest, HttpResponse,
                          HttpResponseForbidden, HttpResponseNotFound, Http404)
 from django.contrib.auth.models import User
@@ -29,6 +28,7 @@ from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
 from imagestore.htmllist import HtmlEntry
 from imagestore.namespace import atom, imst, xhtml, opensearch
 from imagestore.daterange import daterange
+from imagestore.search import SearchParser
 
 class FilteredPictures(models.Manager):
     @staticmethod
@@ -122,6 +122,23 @@ class Picture(models.Model):
 
     tags = models.ManyToManyField(Tag, verbose_name='tags')
 
+    def get_title(self, generate=True):
+        """ Make a valiant attempt to return a title.  First choice is
+        the image title itself.  If that's missing, then try to find a
+        cameratag title.  Failing that, generate one."""
+        if self.title:
+            return self.title
+
+        ct = self.camera.cameratags_set
+        ct = ct.filter(start__lte=self.created_time, end__gt=self.created_time)
+        ct = ct.exclude(title='').order_by('-start')
+        if ct.count() != 0:
+            return ct[0].title
+
+        if generate:
+            return 'Untitled #%d' % self.id
+        return ''
+
     def mediakey(self, variant='orig'):
         if variant == 'orig':
             return '%d/%s' % (self.id, variant)
@@ -135,7 +152,7 @@ class Picture(models.Model):
         return image.ImageProcessor(self, size)
 
     def __str__(self):
-        return '%d: %s' % (self.id, self.title)
+        return '%d: %s' % (self.id, self.get_title())
 
     class Meta:
         ordering = [ '-created_time' ]
@@ -171,8 +188,8 @@ class Picture(models.Model):
         width, height = img.dimensions()
         return ns.img(src=self.get_picture_url(size),
                       width=str(width), height=str(height),
-                      alt=self.description or self.title,
-                      title=self.title)
+                      alt=self.description or self.get_title(),
+                      title=self.get_title())
 
     def chunks(self, variant='orig'):
         return self.media(variant).chunks()
@@ -349,7 +366,7 @@ class PictureEntry(AtomEntry):
         if p.derivatives.count() != 0:
             html_derivatives = [ xhtml.dt('Derivatives'),
                                  xhtml.dd(xhtml.ul([ xhtml.li(xhtml.a({'href': deriv.get_absolute_url() },
-                                                                      '%d: %s' % (deriv.id, deriv.title)))
+                                                                      '%d: %s' % (deriv.id, deriv.get_title())))
                                                      for deriv in p.derivatives.all() ])) ]
 
         photog = ''
@@ -361,7 +378,7 @@ class PictureEntry(AtomEntry):
             derived_from = [ xhtml.dt('Derived from'),
                              xhtml.dd(xhtml.a({'href': p.derived_from.get_absolute_url()},
                                               '%d: %s' % (p.derived_from.id,
-                                                          p.derived_from.title))) ]
+                                                          p.derived_from.get_title()))) ]
 
 
         content = [ xhtml.div({'class': 'image' },
@@ -426,9 +443,7 @@ class PictureEntry(AtomEntry):
         content = self.render_html()
 
         ret = atom.entry(atom.id(self.picture.get_urn()),
-                         atom.title(p.title
-                                    and '%d: %s' % (p.id, p.title)
-                                    or 'untitled #%d' % p.id),
+                         atom.title(p.get_title()),
                          atom.author(atomperson(p.owner)),
                          atom.updated(atomtime(p.modified_time)),
                          atom.published(atomtime(p.created_time)),
@@ -577,10 +592,12 @@ class PictureFeed(AtomFeed):
                           xhtml.input({'type': 'submit', 'name': 'upload',
                                        'value': 'Upload'}))
 
-    def results(self):
-        if self._query is None:        
+    def results(self, order=None):
+        if self._query is None or order :
             q = Picture.objects.vis_filter(self.authuser, self.filter())
             q = q.distinct().select_related()
+            if order:
+                q = q.order_by(order)
             self._query = q
             
         return self._query
@@ -600,6 +617,12 @@ class PictureFeed(AtomFeed):
             pass
         
         return (start,limit)
+
+    def get_last_modified(self):
+        res = self.results().order_by('-modified_time')
+        if res.count() > 0:
+            return res[0].modified_time
+        return None
     
     def opensearch(self):
         count = self.results().count()
@@ -612,17 +635,27 @@ class PictureFeed(AtomFeed):
     def entries(self, **kwargs):
         order = None
 
-        orders = ('created_time', 'uploaded_time', 'modified_time', 'id')
+        orders = {
+            'id': 'id',
+            'created': 'created_time',
+            'uploaded': 'uploaded_time',
+            'modified': 'modified_time',
+            'random': '?'
+            }
 
-        order = self.request.GET.get('order', '-created_time')
+        default = '-created'
+        order = self.request.GET.get('order', default)
 
-        if not re.match('-?(%s)$' % '|'.join(orders), order):
-            order = orders[0]
+        if order[0] == '-' and order[1:] in orders:
+            order = '-' + orders[order[1:]]
+        elif order in orders:
+            order = orders[order]
+        else:
+            order = default
 
         start,limit = self.limits()
+        res = self.results(order)
 
-        res = self.results()
-        
         return [ PictureEntry(p) for p in res[start : start+limit] ]
 
     
@@ -635,360 +668,12 @@ class ParserException(Exception):
 class TokenException(ParserException):
     pass
 
-class SearchParser(object):
-    __slots__ = [ 'search', 'query' ]
-    
-    def __init__(self, search):
-        self.search = search
-        self.query = self.parse()
-
-    def parse(self):
-        """
-        Grammar for searches
-        
-        expr	: subExpr
-                ;
-
-        -- subsearches are separated by '/'; equivalent to & with
-        -- weak precedence; can't be grouped with ()
-        subExpr : catExpr ( '/' catExpr )*
-                ;
-
-        -- space-separated concatenated terms are anded together with
-        -- weak precedence; can be grouped with ()
-        catExpr : orExpr ( ','? orExpr )*
-                ;
-
-        -- Terms can be ORed together with |
-        orExpr	: andExpr ( OR andExpr )*
-                ;
-
-        -- Strong precedence AND operator
-        andExpr	: notExpr ( AND notExpr )*
-                ;
-
-        -- Tight-binding negation
-        notExpr : ('-' | '~') term
-                | term
-                ;
-
-        term	: '(' catExpr ')'       -- grouping
-                | TAG                   -- match tag
-                | QUALTAG               -- match qualified tag
-                | ID                    -- match picture id
-                | VIS                   -- match visibility
-                | OWNER                 -- match owner
-                | PHOTOG                -- match photographer
-                | CAMERA                -- match camera
-                ;
-
-        ID      := '[0-9]+'
-        SEP     := '/'+
-        AND     := ('+' | '&')+
-        OR      := '|'+
-
-        OWNER   := 'owner:' user
-        PHOTOG  := 'photog:' user
-        CAMERA  := 'camera:' cameranick
-        VIS     := 'vis:' ('public' | 'restricted' | 'private')
-
-        TODO: time/date range
-        
-        Tags can take several forms:
-                foo             simple tag
-                foo bar         tag with spaces
-                :foo:bar        qualified tag
-                :foo:bar blat   qualified tag with spaces
-        """
-
-        # Group "v" contains the interesting token value; even
-        #       valueless tokens have one for consistency
-        TOK_owner       = re.compile(r'owner:(?P<v>[a-z][a-z0-9_-]+)', re.I | re.U)
-        TOK_photog      = re.compile(r'photog:(?P<v>[a-z][a-z0-9_-]+)', re.I | re.U)
-        TOK_vis         = re.compile(r'vis:(?P<v>public|restricted|private)', re.I)
-        TOK_camera      = re.compile(r'camera:(?P<v>[a-z0-9 _-]+)', re.I)
-        TOK_reserved    = re.compile(r'(?P<v>[a-z]+):', re.I)
-        
-        tagre           = '[a-z][a-z0-9_ -]*'
-        TOK_tag         = re.compile(r'(?P<v>%s)' % tagre, re.I | re.U)
-        TOK_qualtag     = re.compile(r'(?P<v>(?::%s)+:*\*?)' % tagre,
-                                     re.I | re.U)
-
-        # DATE := -?(YYYY-MM-DDTHH:MM:SS+TZ|(now|today))
-        datere          = r'''
-          (?:(?:\d{4}(?:-\d{1,2}(?:-\d{1,2}(?:T\d{1,2}:\d{1,2}(?::\d{1,2})?)?)?)?(?:\+(?:[+-])?\d{1,2})?)
-        | (?:today|now))
-        '''
-        # DATERANGE := DATE
-        #            | DATE,DATE
-        #            | (day|week|month|year)':'DATE
-        daterange_re       = r'''
-         (?:(?P<start>%(re)s),(?P<end>%(re)s))
-        |(?:(?P<date>%(re)s)
-        |(?:(?P<period>day|week|month|year):(?P<per_date>-?%(re)s)))
-        ''' % { 're': datere }
-        # DATERELATION := (<|<=|=|>=|>)? DATERANGE
-        daterel         = r'(?:(?P<rel><|<=|=|>=|>|)%(dr)s)' % { 'dr': daterange_re }
-
-        #print daterel
-        
-        TOK_created     = re.compile(r'(?P<op>created):(?P<v>%s)' % daterel, re.I | re.X)
-        TOK_modified    = re.compile(r'(?P<op>modified):(?P<v>%s)' % daterel, re.I | re.X)
-        TOK_uploaded    = re.compile(r'(?P<op>uploaded):(?P<v>%s)' % daterel, re.I | re.X)
-        
-        TOK_id          = re.compile(r'(?P<v>\d+)')
-        
-        TOK_sub         = re.compile(r'(?P<v>/+)')
-        TOK_and         = re.compile(r'(?P<v>[&+]+)')
-        TOK_or          = re.compile(r'(?P<v>\|)')
-        TOK_not         = re.compile(r'(?P<v>[-~])')
-        TOK_lp          = re.compile(r'(?P<v>\()')
-        TOK_rp          = re.compile(r'(?P<v>\))')
-        TOK_comma       = re.compile(r'(?P<v>,+)')
-        
-        TOK_eof         = re.compile(r'(?P<v>)$')
-
-        # Order of tokens matters; need to put predicate: entries first
-        # so that tags don't get confused
-        tokens = [ TOK_owner, TOK_vis, TOK_camera, TOK_photog,
-                   TOK_created, TOK_modified, TOK_uploaded,
-                   TOK_reserved,
-                   TOK_tag, TOK_qualtag, TOK_id,
-                   TOK_sub, TOK_and, TOK_or, TOK_not,
-                   TOK_lp, TOK_rp, TOK_comma,
-                   TOK_eof ]
-        
-        # token lookahead
-        lookahead=[]
-
-        def tok_consume():
-            " Consume a token from the input string "
-            self.search = self.search.lstrip()
-            for t in tokens:
-                m = t.match(self.search)
-                if m is not None:
-                    self.search = self.search[m.end():]
-                    return (t, m.group('v'), m.groupdict())
-
-            raise TokenException('failed to match token with remains "%s"' % self.search)
-
-        def tok_next(expect = None):
-            " Return the next token "
-
-            #print 'getting next tok from %s "%s"; expect %s' % (lookahead, self.search, expect)
-            
-            if lookahead:
-                ret = lookahead.pop(0)
-            else:
-                ret = tok_consume()
-
-            if expect is not None and expect is not ret[0]:
-                raise ParserException('unexpected token: wanted %s, got %s', expect, ret[0])
-            
-            #print 'returning token %s %s' % ret
-
-            return ret
-        
-        def tok_LA(x):
-            " Return a lookahead token "
-            while len(lookahead) < x:
-                lookahead.append(tok_consume())
-
-            ret = lookahead[x-1]
-            #print 'LA(%s) returning %s "%s", remains:"%s"' % (x, ret[0], ret[1], self.search)
-            return ret
-
-        def parse_expr():
-            return parse_subExpr()
-
-        def parse_subExpr():
-            q = parse_catExpr()
-
-            while tok_LA(1)[0] is TOK_sub:
-                tok_next(TOK_sub)
-                q = q & parse_catExpr()
-
-            return q
-
-        def parse_catExpr():
-            q = parse_orExpr()
-
-            while tok_LA(1)[0] in (TOK_owner, TOK_vis, TOK_camera, TOK_photog,
-                                   TOK_created, TOK_modified, TOK_uploaded,
-                                   TOK_tag, TOK_qualtag, TOK_id, TOK_lp,
-                                   TOK_comma):
-                if tok_LA(1)[0] is TOK_comma:
-                    tok_next(TOK_comma)
-                q = q & parse_orExpr()
-
-            return q
-
-        def parse_orExpr():
-            q = parse_andExpr()
-
-            while tok_LA(1)[0] is TOK_or:
-                tok_next(TOK_or)
-                q = q | parse_andExpr()
-
-            return q
-
-        def parse_andExpr():
-            q = parse_notExpr()
-
-            while tok_LA(1)[0] is TOK_and:
-                tok_next(TOK_and)
-                q = q & parse_notExpr()
-
-            return q
-
-        def parse_notExpr():
-            if tok_LA(1)[0] is TOK_not:
-                tok_next(TOK_not)
-                q = QNot(parse_term())
-            else:
-                q = parse_term()
-            return q
-
-        def parse_term():
-            tok,val,match = tok_LA(1)
-
-            if tok is TOK_lp:
-                tok_next(TOK_lp)
-                q = parse_catExpr()
-                tok_next(TOK_rp)
-
-            elif tok is TOK_owner:
-                tok_next(tok)
-                q = Q(owner__username = val)
-
-            elif tok is TOK_photog:
-                tok_next(tok)
-                q = Q(photographer__username = val)
-
-            elif tok is TOK_vis:
-                tok_next(tok)
-                val = val.lower()
-                q = Q(visibility = { 'public': Picture.PUBLIC,
-                                     'restricted': Picture.RESTRICTED,
-                                     'private': Picture.PRIVATE }[val])
-
-            elif tok is TOK_camera:
-                tok_next(tok)
-                q = Q(camera__nickname = val)
-
-            # XXX TODO: search camera tags too
-            # q = q | Q(camera__cameratags__tags__word = 'foo')
-            # .extra(where=['imagestore_picture.created_time BETWEEN imagestore_picture__camera__cameratags.start AND imagestore_picture__camera__cameratags.end'])
-            elif tok is TOK_tag:
-                tok_next(tok)
-                q = Q(tags__word = val)
-
-            elif tok is TOK_qualtag:
-                tok_next(tok)
-                
-                if val[-1] == '*':
-                    val = val[:-1]
-                    q = Q(tags__in = Tag.tag(val).more_specific())
-                else:
-                    q = Q(tags = Tag.tag(val))
-
-            elif tok is TOK_id:
-                tok_next(tok)
-                q = Q(id = int(val))
-
-            elif tok in (TOK_created, TOK_modified, TOK_uploaded):
-                tok_next(tok)
-                q = handle_datetime(match)
-
-            elif tok is TOK_eof:
-                tok_next(tok)
-                q = Q()
-
-            elif tok is TOK_reserved:
-                raise ParserException('reserved predicate "%s" used: '
-                                'did you mean to use a :qualified:tag?' % val)
-
-            else:
-                print 'tok=%s lp=%s rp=%s' % (tok, TOK_lp, TOK_rp)
-                raise ParserException('unexpected token "%s" (%s), next %s, search=\"%s\"' % (tok, val, tok_LA(1)[0], self.search))
-
-            return q
-
-        def handle_datetime(groups):
-            def parse_date(d):
-                pieces = [ ('%Y', 'year'), ('-%m', 'month'), ('-%d', 'day'),
-                           ('T%H:%M', None), (':%S', None) ]
-                if d in ('today', 'now'):
-                    return daterange(d)
-                if d is None:
-                    return None
-                
-                ret = None
-                fmt = ''
-
-                for p, period in pieces:
-                    fmt += p
-                    try:
-                        time=dt.datetime.strptime(d, fmt)
-                        if period is not None:
-                            return daterange(time, period=period)
-                        else:
-                            return daterange(time, time)
-                    except ValueError:
-                        continue
-
-                print 'failed to parse "%s"' % d
-                return None
-            
-            print 'groups=%s' % (groups)
-
-            start = parse_date(groups.get('start'))
-            end = parse_date(groups.get('end'))
-            date = parse_date(groups.get('date'))
-            period = groups.get('period')
-            per_date = parse_date(groups.get('per_date'))
-
-            dr = None
-            if start and end:
-                dr = daterange(start.start, end.start)
-            elif date:
-                dr = date
-            elif per_date and period:
-                dr = daterange(start=per_date.start, period=period)
-
-            if dr is None:
-                return Q()      # bad date range?
-
-            print 'daterange=%s' % dr
-            
-            field = '%s_time' % groups.get('op')
-            arg = (dr.start, dr.end)
-            cmp = 'range'
-            
-            rel = groups.get('rel')
-            if rel == '<':
-                arg = dr.start
-                cmp = 'lt'
-            elif rel == '<=':
-                arg = dr.end
-                cmp = 'lt'
-            elif rel == '>':
-                arg = dr.end
-                cmp = 'gte'
-            elif rel == '>=':
-                arg = dr.start
-                cmp = 'gte'
-                
-            return Q(**{'%s__%s'%(field, cmp): arg})
-        
-        return parse_expr()
         
 class PictureSearchFeed(PictureFeed):
-    __slots__ = [ 'summary', 'search', 'query' ]
+    __slots__ = [ 'search', 'query' ]
     
-    def __init__(self, summary=False, search=None):
+    def __init__(self, search=None):
         self.search = search
-        self.summary = summary
         super(PictureSearchFeed, self).__init__()
 
     @permalink
@@ -1036,11 +721,30 @@ class PictureTimeline(RestBase):
             ElementTree(et).write(s)
             return s.getvalue()
 
-        pics = Picture.objects.vis_filter(self.authuser, self.filter()).distinct()
-        return timeline.data([ timeline.event(xmlstring(p.render_img('tiny',ns=html)),
-                                              title=p.title,
-                                              start=fmt(p.created_time))
-                               for p in pics ])
+        pics = Picture.objects.vis_filter(self.authuser, self.filter())
+        pics = pics.distinct().order_by('created_time')
+
+        tl = timeline.data()
+        
+        prev = None
+        evt = None
+        count = 0
+        for p in pics:
+            if (prev is None or
+                (p.created_time - prev.created_time) > dt.timedelta(minutes=30)):
+                if evt is not None and count > 1:
+                    evt.attrib['title'] += ' (%d pics)' % count
+                count = 0
+                evt = timeline.event('',
+                                     start=fmt(p.created_time),
+                                     title=p.get_title(generate=False),
+                                     icon=p.get_picture_url('icon'))
+                tl.append(evt)
+            prev = p
+            count += 1
+            evt.text += xmlstring(html.div(html.h3(p.title), p.render_img('tiny', ns=html)))
+
+        return tl
     
 class Comment(models.Model):
     comment = models.TextField()
@@ -1056,7 +760,7 @@ class CommentFeed(AtomFeed):
     __slots__ = [ 'picture' ]
     
     def title(self):
-        return 'Comments for #%d: %s' % (self.picture.id, self.picture.title or 'untitled')
+        return 'Comments for #%d: %s' % (self.picture.id, self.picture.get_title())
 
     def urlparams(self, kwargs):
         self.picture = get_url_picture(self.authuser, kwargs)
@@ -1080,8 +784,7 @@ class CommentEntry(AtomEntry):
 
 # Make a pile of distinct names so that reverse URL lookups work
 picturefeed     = PictureFeed()
-picturesearch   = PictureSearchFeed(summary=False)
-picturesummary  = PictureSearchFeed(summary=True)
+picturesearch   = PictureSearchFeed()
 picturetimeline = PictureTimeline()
 picture         = PictureEntry()
 pictureexif     = PictureExif()
@@ -1093,8 +796,7 @@ urlpatterns = \
   patterns('',
            ('^$',                       picturefeed),
            ('^timeline/',               picturetimeline),
-           ('^-/(?P<search>.*)/$',      picturesearch),
-           ('^--/(?P<search>.*)/$',     picturesummary),
+           ('^-/(?P<search>.*)/?$',      picturesearch),
            
            ('(?P<picid>[0-9]+)/$',                                      picture),
            ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),

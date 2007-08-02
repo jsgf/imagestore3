@@ -112,15 +112,15 @@ examples
     ?q=apple+tree
     ?q=(claire|rowan) birthday
 
+other GET parameters:
+      limit=X	return at X results; 0 will just return a summary
+      start=X	start at entry X
+      order=random|created|uploaded|modified|id
+
 URL encoding:
     Search URLs prefixed with /-/, as in Gdata
     /-separated components are considered to be '&'ed together
     or in a single component
-
-    /--/ starts a summary search; this doesn't return specific
-    results, but just the summary of the results (number of images,
-    date range, keywords, etc).  Normal searches also include the
-    summary.
 
     examples:
         user/jeremy/images/-/claire/birthday
