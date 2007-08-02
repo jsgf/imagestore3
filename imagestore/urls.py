@@ -4,7 +4,7 @@ from django.conf.urls.defaults import patterns, include
 from django.http import HttpResponse
 
 from imagestore.namespace import xhtml
-from imagestore.RestBase import RestBase
+from imagestore.rest import RestBase
 
 from imagestore.camera import CameraTimeline
 

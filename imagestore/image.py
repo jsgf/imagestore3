@@ -161,7 +161,7 @@ class StillImage(Image):
         tmp.flush()
 
         cmd = '%s %s %s jpg:-' % (convert, ' '.join(args), tmp.name)
-        print 'cmd=%s' % cmd
+        #print 'cmd=%s' % cmd
         result = os.popen(cmd)
 
         data = ''.join(result)

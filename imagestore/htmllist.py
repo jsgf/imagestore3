@@ -1,4 +1,4 @@
-from imagestore.RestBase import RestBase
+from imagestore.rest import RestBase
 from imagestore.namespace import xhtml
 
 content_type = 'application/xhtml+xml'

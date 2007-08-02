@@ -4,6 +4,8 @@ function onLoad() {
   var cameraSource = new Timeline.DefaultEventSource();
   var combinedSource = new Timeline.DefaultEventSource();
   var theme = Timeline.ClassicTheme.create();
+
+  theme.ether.backgroundColors[3] = "#BBB";
   theme.event.bubble.width = 350;
   theme.event.bubble.height = 270;
 

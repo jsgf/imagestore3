@@ -19,9 +19,9 @@ from ElementBuilder import Namespace
 
 from imagestore.media import Media
 from imagestore.tag import Tag
-from imagestore.RestBase import (RestBase, HttpResponseBadRequest,
-                                 HttpResponseConflict, HttpResponseBadRequest,
-                                 HttpResponseContinue, HttpResponseExpectationFailed)
+from imagestore.rest import (RestBase, HttpResponseBadRequest,
+                             HttpResponseConflict, HttpResponseBadRequest,
+                             HttpResponseContinue, HttpResponseExpectationFailed)
 from imagestore import urn, EXIF, image, microformat
 
 from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
@@ -742,7 +742,11 @@ class PictureTimeline(RestBase):
                 tl.append(evt)
             prev = p
             count += 1
-            evt.text += xmlstring(html.div(html.h3(p.title), p.render_img('tiny', ns=html)))
+            d = html.div()
+            if count > 1 and p.title:
+                d.append(html.h3(p.title))
+            d.append(html.p(p.render_img('tiny', ns=html)))
+            evt.text += xmlstring(d)
 
         return tl
     

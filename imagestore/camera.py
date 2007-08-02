@@ -17,7 +17,7 @@ from imagestore.user import get_url_user
 from imagestore.htmllist import HtmlList, HtmlEntry
 from imagestore import microformat
 from imagestore.daterange import daterange
-from imagestore.RestBase import RestBase
+from imagestore.rest import RestBase
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)

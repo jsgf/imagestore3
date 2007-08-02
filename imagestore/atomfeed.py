@@ -3,7 +3,7 @@ from __future__ import absolute_import
 from django.http import HttpRequest, HttpResponse
 
 import ElementBuilder
-from imagestore.RestBase import RestBase
+from imagestore.rest import RestBase
 from imagestore.namespace import atom, xhtml
 
 #content_type = 'application/xml'
@@ -20,9 +20,6 @@ class AtomFeed(RestBase):
 
     def subtitle(self):
         return ''
-    
-    def methods(self):
-        return [ 'GET', 'HEAD', 'POST' ]
     
     def entries(self):
         return []
