@@ -4,26 +4,16 @@ from django.conf.urls.defaults import patterns, include
 from django.http import HttpResponse
 
 from imagestore.namespace import xhtml
-from imagestore.rest import RestBase
+from imagestore import restlist
 
-class Index(RestBase):
-    def render(self):
-        ret = xhtml.ul(xhtml.li(xhtml.a({'href': 'image/'}, 'Images')),
-                       xhtml.li(xhtml.a({'href': 'user/'}, 'Users')),
-                       xhtml.li(xhtml.a({'href': 'tag/'}, 'Tags')))
+class Index(restlist.Entry):
+    def _render_html(self, ns):
+        return ns.ul(ns.li(ns.a({'href': self.append_url_params('image/')}, 'Images')),
+                     ns.li(ns.a({'href': self.append_url_params('user/')}, 'Users')),
+                     ns.li(ns.a({'href': self.append_url_params('tag/')}, 'Tags')))
 
-        return ret
-    
-    def urlparams(self, kwargs):
-        pass
-
-    def do_GET(self, *args, **kwargs):
-        ret = HttpResponse(mimetype='application/xhtml+xml')
-
-        ElementTree(self.render()).write(ret, 'utf-8');
-
-        return ret
-
+    def title(self):
+        return 'Imagestore'
 
 index = Index()
 

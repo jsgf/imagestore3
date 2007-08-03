@@ -23,7 +23,7 @@ class AtomFeed(restlist.List):
     def entries(self):
         return []
 
-    def preamble(self):
+    def preamble(self, ns):
         return []
 
     def opensearch(self):
@@ -37,7 +37,7 @@ class AtomFeed(restlist.List):
         if mod is not None:
             updated = atom.updated(atomtime(mod))
 
-        feed = atom.feed(self.preamble(),
+        feed = atom.feed(self.preamble(atom),
                          self.opensearch(),
                          atom.title(self.title()),
                          updated,

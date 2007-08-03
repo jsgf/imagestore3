@@ -154,17 +154,18 @@ class CameraEntry(restlist.Entry):
         up = c.owner.get_profile()
         
         return ns.div({'class': 'camera' },
-                      ns.h2(ns.a({'class': 'nickname', 'href': c.get_absolute_url() },
+                      ns.h2(ns.a({'class': 'nickname',
+                                  'href': self.append_url_params(c.get_absolute_url()) },
                                  c.nickname), ' - ',
                             ns.span({'class': 'make'}, c.make), ', ',
                             ns.span({'class': 'model'}, c.model)),
                       ns.dl(ns.dt('make'), ns.dd(c.make),
                             ns.dt('model'), ns.dd(c.model),
                             ns.dt('serial'), ns.dd(c.serial),
-                            ns.dt('owner'), ns.dd(ns.a({'href': up.get_absolute_url()},
+                            ns.dt('owner'), ns.dd(ns.a({'href': self.append_url_params(up.get_absolute_url())},
                                                        u.username)),
                             ns.dt('pictures taken'),
-                            ns.dd(ns.a({'href': up.get_search_url('camera:%s' % c.nickname)},
+                            ns.dd(ns.a({'href': self.append_url_params(up.get_search_url('camera:%s' % c.nickname))},
                                        str(c.picture_set.count()))),
                             ns.dt('keywords'),
                             ns.dd(ns.dl(*[ format_ct(ct)

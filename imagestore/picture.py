@@ -365,14 +365,14 @@ class PictureEntry(AtomEntry):
         (width, height) = img.dimensions()
 
         htmltags = ns.ul([ ns.li(ns.a({ 'href':
-                                        PictureFeed(search=tag.canonical()).get_absolute_url() },
+                                        self.append_url_params(PictureFeed(search=tag.canonical()).get_absolute_url()) },
                                       tag.render()))
                            for tag in p.effective_tags() ])
 
         html_derivatives = []
         if p.derivatives.count() != 0:
             html_derivatives = [ ns.dt('Derivatives'),
-                                 ns.dd(ns.ul([ ns.li(ns.a({'href': deriv.get_absolute_url() },
+                                 ns.dd(ns.ul([ ns.li(ns.a({'href': self.append_url_params(deriv.get_absolute_url()) },
                                                           '%d: %s' % (deriv.id, deriv.get_title())))
                                                for deriv in p.derivatives.all() ])) ]
 
@@ -383,13 +383,13 @@ class PictureEntry(AtomEntry):
         derived_from = []
         if p.derived_from is not None:
             derived_from = [ ns.dt('Derived from'),
-                             ns.dd(ns.a({'href': p.derived_from.get_absolute_url()},
+                             ns.dd(ns.a({'href': self.append_url_params(p.derived_from.get_absolute_url())},
                                         '%d: %s' % (p.derived_from.id,
                                                     p.derived_from.get_title()))) ]
 
 
         content = [ ns.div({'class': 'image' },
-                           ns.a({'href': p.get_absolute_url()},
+                           ns.a({'href': self.append_url_params(p.get_absolute_url())},
                                 p.render_img(ns=ns))),
                     ns.dl({ 'class': 'metadata' },
                           ns.dt('Owner' ),
@@ -414,17 +414,17 @@ class PictureEntry(AtomEntry):
                                         'title': str(p.visibility) },
                                        Picture.str_visibility(p.visibility))),
                           ns.dt('Camera'),
-                          ns.dd(ns.a({'href': p.camera.get_absolute_url()},
+                          ns.dd(ns.a({'href': self.append_url_params(p.camera.get_absolute_url(), remove='format')},
                                      p.camera.nickname),
                                 ' ',
-                                ns.a({'href': p.get_exif_url() }, 'Exif')),
+                                ns.a({'href': self.append_url_params(p.get_exif_url(), remove='format')}, 'Exif')),
                           ns.dt({'class': 'tags'}, 'Tags'),
                           ns.dd(htmltags),
                           ns.dt('Description'),
                           ns.dd(ns.p(p.description)),
                           ),
 
-                    ns.a({'href': p.get_comment_url()},
+                    ns.a({'href': self.append_url_params(p.get_comment_url())},
                          '%d comments' % p.comment_set.count()) ]
         
         return content
@@ -577,7 +577,7 @@ class PictureFeed(AtomFeed):
         self.add_type('timeline', 'application/xml', serialize_xml)
 
     def title(self):
-        if self.search is not None:
+        if self.search:
             return 'Pictures: "%s": %d results' % (self.search, self.results().count())
         else:
             return '%d Pictures' % self.results().count()
@@ -613,10 +613,10 @@ class PictureFeed(AtomFeed):
 
         return filter
     
-    def preamble(self):
+    def preamble(self, ns):
         """ Insert a little html form for as a guide for how to post
             to this channel; it should really be a proper APP thing."""
-        return xhtml.form({'method': 'post', 'action': '',
+        form = xhtml.form({'method': 'post', 'action': '',
                            'enctype': 'multipart/form-data'},
                           xhtml.label({'for': 'up-image'}, 'Image'),
                           xhtml.input({'type': 'file', 'name': 'image',
@@ -629,6 +629,16 @@ class PictureFeed(AtomFeed):
                                        'id': 'iup-tags'}),
                           xhtml.input({'type': 'submit', 'name': 'upload',
                                        'value': 'Upload'}))
+        links = self.alt_links(ns)
+        p = self.link_prev()
+        if p:
+            links.append(ns.link(rel="prev", type=self.mimetype, href=p))
+        n = self.link_next()
+        if n:
+            links.append(ns.link(rel="next", type=self.mimetype, href=n))
+
+        return links + [form]
+            
 
     def results(self, order=None):
         if self._query is None or order :
@@ -696,6 +706,35 @@ class PictureFeed(AtomFeed):
 
         return [ PictureEntry(p, request=self.request) for p in res[start : start+limit] ]
 
+
+    def link_prev(self):
+        start,limit = self.limits()
+
+        if start > 0:
+            return self.append_url_params('', { 'start': max(0,start-limit), })
+
+    def link_next(self):
+        start,limit = self.limits()
+        count = self.results().count()
+        
+        if start+limit < count:
+            return self.append_url_params('', { 'start': start+limit })
+
+    def _render_html(self, ns, *args, **kwargs):
+        start,limit = self.limits()
+
+        nav = ns.span({'class': 'nav'})
+
+        p = self.link_prev()
+        if p:
+            nav.append(ns.a({'href': p, 'class': 'prev'}, 'Prev'))
+
+        n = self.link_next()
+        if n:
+            nav.append(ns.a({'href': n, 'class': 'next'}, 'Next'))
+
+        return ns.div(nav, ns.ul([ ns.li(e._render_html(ns, *args, **kwargs))
+                                   for e in self.generate() ]))
 
     def render_timeline(self, *args, **kwargs):
         def fmt(dt):

@@ -12,10 +12,19 @@ class Entry(RestBase):
     def render_json(self, *args, **kwargs):
         return self.generate()
 
+    def alt_links(self, ns):
+        links = [ ns.link(type=self.types[fmt][0],
+                          href=self.append_url_params('', {'format': fmt}),
+                          rel="alternate")
+                  for fmt in self.accepted_formats() ]
+        return links
+
     def _html_frame(self, ns, inner):
-        return ns.html(ns.head(ns.title(self.title())),
-                       ns.body(inner))
-    
+        links = self.alt_links(ns)
+        
+        return ns.html(ns.head(links, ns.title(self.title())),
+                       ns.body(ns.h1(self.title()), inner))
+
     def render_html(self, *args, **kwargs):
         return self._html_frame(html, self._render_html(html, *args, **kwargs))
 

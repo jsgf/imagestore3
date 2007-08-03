@@ -86,15 +86,16 @@ class UserEntry(restlist.Entry):
                                                        microformat.hcard(f))
                                               for f in up.friends.all() ])))
         if u.camera_set.count() > 0:
-            detail.append(ns.dt(ns.a({'href': up.get_camera_url() }, 'Cameras')))
+            detail.append(ns.dt(ns.a({'href': self.append_url_params(up.get_camera_url()) },
+                                     'Cameras')))
             detail.append(ns.dd(ns.ul({ 'class': 'cameras' },
                                             [ ns.li({ 'class': 'camera' },
-                                                       ns.a({'href': c.get_absolute_url()},
+                                                       ns.a({'href': self.append_url_params(c.get_absolute_url())},
                                                                c.nickname))
                                               for c in u.camera_set.all() ])))
 
         detail.append(ns.dt('pictures'))
-        detail.append(ns.dd(ns.a({ 'href': up.get_image_url() },
+        detail.append(ns.dd(ns.a({ 'href': self.append_url_params(up.get_image_url()) },
                                        str(u.owned_pics.count()))))
 
         return content

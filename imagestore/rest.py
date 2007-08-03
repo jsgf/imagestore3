@@ -6,6 +6,7 @@ import json
 from cStringIO import StringIO
 from datetime import datetime
 from xml.etree.cElementTree import ElementTree
+import urllib
 
 from django.http import HttpResponseNotAllowed, HttpResponse, HttpResponseNotFound
 from django.views.decorators.cache import cache_control
@@ -76,8 +77,8 @@ class RestBase(object):
     def urlparams(self, kwargs):
         pass
 
-    def match_accepts(self, formats, accepts):
-        ok_types = [ k for (k,v) in self.back_types.items() if v[0] in formats ]
+    def match_accepts(self, accepts):
+        ok_types = self.accepted_types()
         #print 'accepts=%s formats=%s, ok_types=%s' % (accepts, formats, ok_types)
 
         # match: 'text/plain;q=.5;ext=foo', and extract the type and q
@@ -105,10 +106,9 @@ class RestBase(object):
         #print 'returning best=%s -> %s' % (best[0], ret)
         return ret
 
-    def render_error(self, *args, **kwargs):
-        error = kwargs['error']
-        body = kwargs.get('body', None)
-        title = kwargs.get('title', 'Error %d' % error)
+    def render_error(self, error, body, title=None, *args, **kwargs):
+        if not title:
+            title = 'Error %d' % error
         
         resp = HttpResponse(mimetype='text/html')
         resp.status_code = error
@@ -121,17 +121,47 @@ class RestBase(object):
 
         return resp
 
-    def not_acceptible(self, requested, formats):
-        body = html.div(html.p('Couldn\'t find an appropriate format to match "%s" for resource. '
-                               'Try one of these:' % requested),
+    def not_acceptible(self, requested):
+        body = html.div(html.p('Couldn\'t find an appropriate format to match "%s" '
+                               'for this resource. Try one of these:' % requested),
                         html.ul([ html.li(html.a({ 'type':self.types[fmt][0] },
                                                  '%s: %s' % (fmt, self.types[fmt][0]),
-                                                 href='?format=%s' % fmt))
-                                  for fmt in formats ]))
+                                                 href=self.append_url_params('', { 'format': fmt })))
+                                  for fmt in self.accepted_formats() ]))
 
         return self.render_error(error=406,
                                  title='Not Acceptible',
                                  body=body)
+
+    def accepted_formats(self):
+        return [ f for f in self.types
+                 if (hasattr(self, 'render_%s' % f) and
+                     callable(getattr(self, 'render_%s' % f))) ]
+
+    def accepted_types(self):
+        return [ k for (k,v) in self.back_types.items()
+                 if v[0] in self.accepted_formats() ]
+
+    def append_url_params(self, base, param=None, remove=None):
+        if param is None:
+            param={}
+
+        for k in self.request.GET.keys():
+            if k not in param:
+                param[k] = self.request.GET[k]
+
+        if remove:
+            if isinstance(remove, str):
+                del param[remove]
+            else:
+                for r in remove:
+                    del param[r]
+
+        #print 'param=%s -> %s' % (param, urllib.urlencode(param))
+        if not param:
+            return base
+        
+        return '%s?%s' % (base, urllib.urlencode(param))
 
     def render(self, format=None, *args, **kwargs):
         """
@@ -147,24 +177,22 @@ class RestBase(object):
         serializer - to convert the render format into something
                 appropriate for the http body.
         """
-        formats = [ f for f in self.types
-                    if (hasattr(self, 'render_%s' % f) and
-                        callable(getattr(self, 'render_%s' % f))) ]
+        formats = self.accepted_formats()
 
         requested = None
         if format is None:
             # see if we've been told what format to use
             format = self.request.GET.get('format', None)
-            requested = self.types.get(format, (None, None))[0]
+            requested = self.types.get(format, (format, None))[0]
 
         if format is None:
             accepts = self.request.META.get('HTTP_ACCEPT', None)
             requested = accepts
             if accepts:
-                format = self.match_accepts(formats, accepts)
+                format = self.match_accepts(accepts)
 
         if format is None or format not in formats:
-            return self.not_acceptible(requested, formats)
+            return self.not_acceptible(requested)
 
         self.format = format
         self.mimetype = self.types[format][0]
