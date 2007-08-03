@@ -93,11 +93,11 @@ class Picture(models.Model):
     height = models.PositiveIntegerField(editable=False)
     orientation = models.PositiveIntegerField()
 
-    created_time = models.DateTimeField("time picture was taken")
+    created_time = models.DateTimeField("time picture was taken", db_index=True)
     uploaded_time = models.DateTimeField("time picture was uploaded",
-                                         auto_now_add=True)
+                                         auto_now_add=True, db_index=True)
     modified_time = models.DateTimeField("time picture was last modified",
-                                         auto_now=True)
+                                         auto_now=True, db_index=True)
 
     original_ref = models.CharField("external reference for picture",
                                     maxlength=100, blank=True)
