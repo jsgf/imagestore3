@@ -422,7 +422,7 @@ class PictureEntry(AtomEntry):
                             '%d comments' % p.comment_set.count()) ]
         return content
     
-    def render(self):
+    def render_atom(self, mimetype):
         p = self.picture
         assert p is not None
 
@@ -459,7 +459,7 @@ class PictureEntry(AtomEntry):
         if p.camera:
             ret.append(atom.link({ 'rel': 'camera', 'href': p.camera.get_absolute_url() }))
 
-        return ret
+        return (mimetype,ret)
 
     def do_POST(self, *args, **kwargs):
         return picture_upload(self, *args, **kwargs)

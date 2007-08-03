@@ -55,11 +55,13 @@ function onLoad() {
   bandInfos[2].highlight = true;
   bandInfos[3].syncWith = 0;
   bandInfos[3].highlight = true;
+  var camurl = '/imagestore/camera/?format=timeline';
+
   tl = Timeline.create(document.getElementById("my-timeline"), bandInfos);
   Timeline.loadXML('/imagestore/image/timeline/', function(xml, url) { pictureSource.loadXML(xml, url); });
-  Timeline.loadXML('/imagestore/camera/timeline/', function(xml, url) { cameraSource.loadXML(xml, url); });
+  Timeline.loadXML(camurl, function(xml, url) { cameraSource.loadXML(xml, url); });
   Timeline.loadXML('/imagestore/image/timeline/', function(xml, url) { combinedSource.loadXML(xml, url); });
-  Timeline.loadXML('/imagestore/camera/timeline/', function(xml, url) { combinedSource.loadXML(xml, url); });
+  Timeline.loadXML(camurl, function(xml, url) { combinedSource.loadXML(xml, url); });
 }
 
 var resizeTimerID = null;

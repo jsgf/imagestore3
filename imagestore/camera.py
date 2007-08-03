@@ -12,12 +12,13 @@ from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 
 from imagestore.tag import Tag
-from imagestore.namespace import xhtml
+from imagestore.namespace import xhtml, html, timeline
 from imagestore.user import get_url_user
 from imagestore.htmllist import HtmlList, HtmlEntry
 from imagestore import microformat
 from imagestore.daterange import daterange
-from imagestore.rest import RestBase
+from imagestore.rest import RestBase, serialize_xml
+import imagestore.restlist as restlist
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -49,54 +50,123 @@ def get_url_camera(user, kwargs):
 
     return Camera.objects.get(owner=user, nickname = id)
 
-class CameraList(HtmlList):
+def render_timeline(camtags):
+    def fmt(dt):
+        return dt.strftime('%b %d %Y %T')
+
+    def xmlstring(et):
+        s = StringIO()
+        ElementTree(et).write(s)
+        return s.getvalue()
+
+    def ct_title(ct):
+        return ct.title or ', '.join([ t.description or t.canonical()
+                                       for t in ct.tags.all()[:4] ])
+
+    ret = timeline.data([ timeline.event(xmlstring(ct.html(html)),
+                                         start = fmt(ct.start),
+                                         end = fmt(ct.end),
+                                         title = '%s: %s' % (ct.camera.nickname,
+                                                             ct_title(ct)),
+                                         isDuration = 'true')
+                          for ct in camtags ])
+
+    return ret    
+
+class CameraList(restlist.List):
     __slots__ = [ 'urluser' ]
+
+    def __init__(self, *args, **kwargs):
+        super(CameraList, self).__init__(*args, **kwargs)
+        self.add_type('timeline', 'application/xml', serialize_xml)
 
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
 
-    def entries(self, **kwargs):
-        return [ CameraEntry(c).render() for c in self.urluser.camera_set.all() ]
+    def render_timeline(self, *args, **kwargs):
+        camtags = CameraTags.objects.all()
+        
+        if self.urluser:
+            camtags = camtags.filter(camera__owner = self.urluser)
 
-class CameraEntry(HtmlEntry):
+        return render_timeline(camtags)
+
+    def entries(self, **kwargs):
+        cameras = Camera.objects.all()
+        if self.urluser:
+            cameras = c.filter(owner=self.urluser)
+            
+        return [ CameraEntry(c) for c in cameras ]
+
+class CameraEntry(restlist.Entry):
     __slots__ = [ 'camera', 'urluser' ]
     
     def __init__(self, camera = None):
-        HtmlEntry.__init__(self)
+        super(CameraEntry,self).__init__()
+        self.add_type('timeline', 'application/xml', serialize_xml)
         if camera:
             self.camera = camera
 
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
         self.camera = get_url_camera(self.urluser, kwargs)
+
+    def generate(self):
+        c = self.camera
+        u = c.owner
+        up = c.owner.get_profile()
         
-    def render(self):
+        return { 'nickname':    c.nickname,
+                 'url':         c.get_absolute_url(),
+                 'make':        c.make,
+                 'model':       c.model,
+                 'serial':      c.serial,
+                 'owner':       u.username,
+                 'pictures':    { 'count':      c.picture_set.count(),
+                                  'search':     up.get_search_url('camera:%s' % c.nickname) },
+                 'keywords':    c.cameratags_set.all(),
+                 }
+
+    def render_timeline(self, *args, **kwargs):
+        camtags = CameraTags.objects
+
+        if self.urluser:
+            camtags = camtags.filter(camera__owner = self.urluser)
+        camtags = camtags.filter(camera = self.camera)
+
+        return render_timeline(camtags)
+    
+    def render_json(self, *args, **kwargs):
+        return self.generate()
+
+    def _render_html(self, *args, **kwargs):
         from imagestore.picture import PictureSearchFeed
         c = self.camera
-
+        ns = kwargs['ns']
+        
         def format_ct(ct):
-            return [ xhtml.dt(microformat.html_daterange(ct.daterange())),
-                     xhtml.dd(xhtml.ul([ xhtml.li(t.render()) for t in ct.tags.all() ])) ]
+            return [ ns.dt(microformat.html_daterange(ct.daterange())),
+                     ns.dd(ns.ul([ ns.li(t.render()) for t in ct.tags.all() ])) ]
 
         u = c.owner
         up = c.owner.get_profile()
         
-        return xhtml.div({'class': 'camera' },
-                         xhtml.h2(xhtml.a({'class': 'nickname', 'href': c.get_absolute_url() },
-                                          c.nickname), ' - ',
-                                  xhtml.span({'class': 'make'}, c.make), ', ',
-                                  xhtml.span({'class': 'model'}, c.model)),
-                         xhtml.dl(xhtml.dt('make'), xhtml.dd(c.make),
-                                  xhtml.dt('model'), xhtml.dd(c.model),
-                                  xhtml.dt('serial'), xhtml.dd(c.serial),
-                                  xhtml.dt('owner'), xhtml.dd(xhtml.a({'href': up.get_absolute_url()},
-                                                                      u.username)),
-                                  xhtml.dt('pictures taken'),
-                                  xhtml.dd(xhtml.a({'href': up.get_search_url('camera:%s' % c.nickname)},
-                                                   str(c.picture_set.count()))),
-                                  xhtml.dt('keywords'),
-                                  xhtml.dd(xhtml.dl(*[ format_ct(ct)
-                                                       for ct in c.cameratags_set.all() ]))))
+        return ns.div({'class': 'camera' },
+                      ns.h2(ns.a({'class': 'nickname', 'href': c.get_absolute_url() },
+                                 c.nickname), ' - ',
+                            ns.span({'class': 'make'}, c.make), ', ',
+                            ns.span({'class': 'model'}, c.model)),
+                      ns.dl(ns.dt('make'), ns.dd(c.make),
+                            ns.dt('model'), ns.dd(c.model),
+                            ns.dt('serial'), ns.dd(c.serial),
+                            ns.dt('owner'), ns.dd(ns.a({'href': up.get_absolute_url()},
+                                                       u.username)),
+                            ns.dt('pictures taken'),
+                            ns.dd(ns.a({'href': up.get_search_url('camera:%s' % c.nickname)},
+                                       str(c.picture_set.count()))),
+                            ns.dt('keywords'),
+                            ns.dd(ns.dl(*[ format_ct(ct)
+                                           for ct in c.cameratags_set.all() ]))))
 
 def get_camera(owner, exif):
     try:
@@ -155,60 +225,14 @@ class CameraTags(models.Model):
     class Meta:
         ordering = [ 'start' ]
 
-
-class CameraTimeline(RestBase):
-    def __init__(self):
-        RestBase.__init__(self)
-
-    def content_type(self):
-        return 'application/xml'
-
-    def urlparams(self, kwargs):
-        self.urluser = get_url_user(kwargs)
-        self.camera = get_url_camera(self.urluser, kwargs)
-
-    def render(self):
-        timeline = Namespace()
-        html = Namespace()
-        
-        def fmt(dt):
-            return dt.strftime('%b %d %Y %T')
-
-        def xmlstring(et):
-            s = StringIO()
-            ElementTree(et).write(s)
-            return s.getvalue()
-
-        camtags = CameraTags.objects
-        if self.urluser:
-            camtags.filter(camera__owner = self.urluser)
-        if self.camera:
-            camtags.filter(camera = camera)
-
-        def ct_title(ct):
-            return ct.title or ', '.join([ t.description or t.canonical()
-                                           for t in ct.tags.all()[:4] ])
-        
-        ret = timeline.data([ timeline.event(xmlstring(ct.html(html)),
-                                             start = fmt(ct.start),
-                                             end = fmt(ct.end),
-                                             title = '%s: %s' % (ct.camera.nickname,
-                                                                 ct_title(ct)),
-                                             isDuration = 'true')
-                              for ct in camtags.all() ])
-
-        return ret
-        
 __all__ = [ 'Camera', 'get_camera', 'CameraTags' ]
 
 cameralist      = CameraList()
+camerauserlist  = CameraList()
 camera          = CameraEntry()
-cameratimeline  = CameraTimeline()
 
 urlpatterns = \
   patterns('',
            ('^$',                               cameralist),
-           ('timeline/$',                       cameratimeline),
            ('^(?P<camnick>[a-zA-Z0-9_-]+)/$',   camera),
-           ('^(?P<camnick>[a-zA-Z0-9_-]+)/timeline/$',    cameratimeline),
            )

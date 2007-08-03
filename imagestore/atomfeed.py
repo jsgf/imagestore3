@@ -6,10 +6,9 @@ import ElementBuilder
 from imagestore.rest import RestBase
 from imagestore.namespace import atom, xhtml
 
-#content_type = 'application/xml'
-content_type = 'application/atom+xml'
+from imagestore.restlist import List, Entry
 
-class AtomFeed(RestBase):
+class AtomFeed(List):
     __slots__ = [ 'title', 'subtitle', 'uri' ]
 
     def __init__(self):
@@ -51,15 +50,16 @@ class AtomFeed(RestBase):
 
         return feed
 
-class AtomEntry(RestBase):
+class AtomEntry(Entry):
     def __init__(self):
         super(AtomEntry, self).__init__()
 
-    def content_type(self):
-        return content_type
 
-    def render(self):
-        return atom.entry()
+    def render_atom(self, *args, **kwargs):
+        r = self._render_atom()
+
+        e = self.generate()
+        ret = atom.entry()
 
 def atomtime(td):
     return td.strftime('%Y-%m-%dT%H:%M:%SZ')

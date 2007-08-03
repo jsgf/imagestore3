@@ -6,8 +6,6 @@ from django.http import HttpResponse
 from imagestore.namespace import xhtml
 from imagestore.rest import RestBase
 
-from imagestore.camera import CameraTimeline
-
 class Index(RestBase):
     def render(self):
         ret = xhtml.ul(xhtml.li(xhtml.a({'href': 'image/'}, 'Images')),
@@ -32,9 +30,10 @@ index = Index()
 # Order matters here, so that we get the reverse lookup correct
 urlpatterns = patterns('',
             ('^$',                      'imagestore.urls.index'),
-            #('ui/',                     include('imagestore.ui')),
-            ('^camera/timeline/$',      CameraTimeline()),
+            #('ui/',                    include('imagestore.ui')),
+            ('^camera/$',               'imagestore.camera.cameralist'),
             ('^image/',                 include('imagestore.picture')),
             ('^user/',                  include('imagestore.user')),
             ('^(?P<urn>urn:[^/]*)/(?P<rest>.*)$', include('imagestore.urn')),
+            ('^test/$',         'imagestore.rest.test'),
 )
