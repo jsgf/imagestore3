@@ -152,9 +152,10 @@ class RestBase(object):
 
         if remove:
             if isinstance(remove, str):
-                del param[remove]
-            else:
-                for r in remove:
+                remove = [remove]
+
+            for r in remove:
+                if r in param:
                     del param[r]
 
         #print 'param=%s -> %s' % (param, urllib.urlencode(param))
