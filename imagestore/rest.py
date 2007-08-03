@@ -78,7 +78,7 @@ class RestBase(object):
 
     def match_accepts(self, formats, accepts):
         ok_types = [ k for (k,v) in self.back_types.items() if v[0] in formats ]
-        print 'accepts=%s formats=%s, ok_types=%s' % (accepts, formats, ok_types)
+        #print 'accepts=%s formats=%s, ok_types=%s' % (accepts, formats, ok_types)
 
         # match: 'text/plain;q=.5;ext=foo', and extract the type and q
         c = re.compile('([^;]*)(?:;(?:q=([0-9.]+)|[^;]*))*')
@@ -97,12 +97,12 @@ class RestBase(object):
             q = float(q)
 
             for type in ok_types:
-                print '  type=%s t=%s q=%f, best=%s' % (type, t, q, best)
+                #print '  type=%s t=%s q=%f, best=%s' % (type, t, q, best)
                 if fnmatch(type, t) and q > best[1]:
                     best = (type, q)
 
         ret = self.back_types.get(best[0], (None, None))[0]
-        print 'returning best=%s -> %s' % (best[0], ret)
+        #print 'returning best=%s -> %s' % (best[0], ret)
         return ret
 
     def render_error(self, *args, **kwargs):
@@ -124,7 +124,8 @@ class RestBase(object):
     def not_acceptible(self, requested, formats):
         body = html.div(html.p('Couldn\'t find an appropriate format to match "%s" for resource. '
                                'Try one of these:' % requested),
-                        html.ul([ html.li(html.a('%s: %s' % (fmt, self.types[fmt][0]),
+                        html.ul([ html.li(html.a({ 'type':self.types[fmt][0] },
+                                                 '%s: %s' % (fmt, self.types[fmt][0]),
                                                  href='?format=%s' % fmt))
                                   for fmt in formats ]))
 
@@ -168,13 +169,15 @@ class RestBase(object):
         self.format = format
         self.mimetype = self.types[format][0]
 
-        return (getattr(self, 'render_%s' % format))(self, *args, **kwargs)
+        return (getattr(self, 'render_%s' % format))(*args, **kwargs)
     
     def do_GET(self, *args, **kwarg):
         return self.render()
 
     def do_HEAD(self, *args, **kwargs):
         resp = self.do_GET(self.request, *args, **kwargs)
+        if not isinstance(resp, HttpResponse):
+            resp = HttpResponse(mimetype=self.mimetype)
         if resp.status_code == 200:
             resp.content = ''
             resp['Content-Length'] = '0'

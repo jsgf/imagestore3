@@ -2,6 +2,8 @@ import re
 
 from django.db.models.query import Q, QNot
 
+from imagestore.tag import Tag
+
 __all__ = [ 'SearchParser' ]
 
 #

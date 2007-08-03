@@ -11,14 +11,16 @@ class Entry(RestBase):
 
     def render_json(self, *args, **kwargs):
         return self.generate()
+
+    def _html_frame(self, ns, inner):
+        return ns.html(ns.head(ns.title(self.title())),
+                       ns.body(inner))
     
     def render_html(self, *args, **kwargs):
-        kwargs['ns'] = html
-        return self._render_html(*args, **kwargs)
+        return self._html_frame(html, self._render_html(html, *args, **kwargs))
 
     def render_xhtml(self, *args, **kwargs):
-        kwargs['ns'] = xhtml
-        return self._render_html(*args, **kwargs)
+        return self._html_frame(xhtml, self._render_html(xhtml, *args, **kwargs))
 
 class List(Entry):
     def entries(self):
@@ -28,9 +30,8 @@ class List(Entry):
         for e in self.entries():
             yield e
 
-    def _render_html(self, *args, **kwargs):
-        ns=kwargs['ns']
-        return ns.ul([ ns.li(e._render_html(*args, **kwargs))
+    def _render_html(self, ns, *args, **kwargs):
+        return ns.ul([ ns.li(e._render_html(ns, *args, **kwargs))
                        for e in self.generate() ])
 
     def render_json(self, *args, **kwargs):

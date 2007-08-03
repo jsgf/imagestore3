@@ -13,9 +13,9 @@ def html_daterange(dr):
     return xhtml.span({ 'class': 'daterange' },
                       html_datetime(dr.start), ' - ', html_datetime(dr.end))
 
-def exif(exif):
+def exif(exif, ns=xhtml):
     """ Generate a simple xhtml microformat encoding for exif data """
-    dl = xhtml.dl({'class': 'exif'})
+    dl = ns.dl({'class': 'exif'})
 
     keys = exif.keys()
     keys.sort()
@@ -28,40 +28,40 @@ def exif(exif):
             len(v.values) > 200):
             continue
 
-        dl.append(xhtml.dt(xhtml.dfn({'title': '%s 0x%04x' % (k.split(' ')[0], v.tag),
-                                      'class': 'type-%s' % EXIF.FIELD_TYPES[v.field_type][1]},
-                                     k)))
+        dl.append(ns.dt(ns.dfn({'title': '%s 0x%04x' % (k.split(' ')[0], v.tag),
+                                'class': 'type-%s' % EXIF.FIELD_TYPES[v.field_type][1]},
+                               k)))
 
         if isinstance(v.values, list) and len(v.values) > 1:
-            val = xhtml.ol([ xhtml.li(str(val)) for val in v.values ])
+            val = ns.ol([ ns.li(str(val)) for val in v.values ])
         elif isinstance(v.printable, datetime):
-            val = xhtml.dfn({ 'class': 'dtbegin', 'title': atomtime(v.printable)},
-                            str(v.printable))
+            val = ns.dfn({ 'class': 'dtbegin', 'title': atomtime(v.printable)},
+                         str(v.printable))
         else:
             val = str(v.printable)
 
-        dl.append(xhtml.dd(val))
+        dl.append(ns.dd(val))
 
     return dl
 
-def hcard(u):
+def hcard(u, ns=xhtml):
     if u is None:
         return []
     
     up = u.get_profile()
     
-    hcard = xhtml.div({'class': 'vcard'},
-                      xhtml.a({'class': 'n', 'href': up.get_absolute_url() },
-                              xhtml.span({'class': 'given-name'}, u.first_name),
-                              ' ',
-                              xhtml.span({'class': 'family-name'}, u.last_name)),
-                      ' (', xhtml.a({ 'href': u.get_absolute_url() },
-                                    xhtml.span({'class': 'nickname'}, u.username)), ')',
-                      '<', xhtml.a({ 'href': 'mailto:%s' % u.email},
-                                   xhtml.span({'class': 'email'}, u.email)), '>'
-                      )
+    hcard = ns.div({'class': 'vcard'},
+                   ns.a({'class': 'n', 'href': up.get_absolute_url() },
+                        ns.span({'class': 'given-name'}, u.first_name),
+                        ' ',
+                        ns.span({'class': 'family-name'}, u.last_name)),
+                   ' (', ns.a({ 'href': u.get_absolute_url() },
+                              ns.span({'class': 'nickname'}, u.username)), ')',
+                   '<', ns.a({ 'href': 'mailto:%s' % u.email},
+                             ns.span({'class': 'email'}, u.email)), '>'
+                   )
 
     if up.icon is not None:
-        hcard += xhtml.img({'class': 'picture', 'src': up.icon.get_picture_url('icon')})
+        hcard += ns.img({'class': 'picture', 'src': up.icon.get_picture_url('icon')})
 
     return hcard

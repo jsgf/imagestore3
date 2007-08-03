@@ -11,14 +11,12 @@ from django.db.models import permalink
 from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 
+from imagestore import microformat, restlist
 from imagestore.tag import Tag
 from imagestore.namespace import xhtml, html, timeline
 from imagestore.user import get_url_user
-from imagestore.htmllist import HtmlList, HtmlEntry
-from imagestore import microformat
 from imagestore.daterange import daterange
 from imagestore.rest import RestBase, serialize_xml
-import imagestore.restlist as restlist
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -83,6 +81,9 @@ class CameraList(restlist.List):
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
 
+    def title(self):
+        return '%s\'s cameras' % self.urluser.username
+
     def render_timeline(self, *args, **kwargs):
         camtags = CameraTags.objects.all()
         
@@ -94,7 +95,7 @@ class CameraList(restlist.List):
     def entries(self, **kwargs):
         cameras = Camera.objects.all()
         if self.urluser:
-            cameras = c.filter(owner=self.urluser)
+            cameras = cameras.filter(owner=self.urluser)
             
         return [ CameraEntry(c) for c in cameras ]
 
@@ -110,6 +111,9 @@ class CameraEntry(restlist.Entry):
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
         self.camera = get_url_camera(self.urluser, kwargs)
+
+    def title(self):
+        return self.camera.nickname
 
     def generate(self):
         c = self.camera
@@ -139,10 +143,8 @@ class CameraEntry(restlist.Entry):
     def render_json(self, *args, **kwargs):
         return self.generate()
 
-    def _render_html(self, *args, **kwargs):
-        from imagestore.picture import PictureSearchFeed
+    def _render_html(self, ns, *args, **kwargs):
         c = self.camera
-        ns = kwargs['ns']
         
         def format_ct(ct):
             return [ ns.dt(microformat.html_daterange(ct.daterange())),

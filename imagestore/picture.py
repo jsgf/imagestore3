@@ -21,12 +21,12 @@ from imagestore.media import Media
 from imagestore.tag import Tag
 from imagestore.rest import (RestBase, HttpResponseBadRequest,
                              HttpResponseConflict, HttpResponseBadRequest,
-                             HttpResponseContinue, HttpResponseExpectationFailed)
-from imagestore import urn, EXIF, image, microformat
+                             HttpResponseContinue, HttpResponseExpectationFailed,
+                             serialize_xml)
+from imagestore import urn, EXIF, image, microformat, restlist
 
 from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
-from imagestore.htmllist import HtmlEntry
-from imagestore.namespace import atom, imst, xhtml, opensearch
+from imagestore.namespace import atom, imst, html, xhtml, opensearch, timeline
 from imagestore.daterange import daterange
 from imagestore.search import SearchParser
 
@@ -335,10 +335,17 @@ def picture_upload(self, derived_from=None, *args, **kwargs):
 class PictureEntry(AtomEntry):
     __slots__ = [ 'picture', 'urluser' ]
     
-    def __init__(self, p = None):
+    def __init__(self, p = None, request=None):
         AtomEntry.__init__(self)
+
+        if request is not None:
+            self.request = request
+
         if p is not None:
             self.picture = p
+
+    def title(self):
+        return self.picture.get_title()
 
     def urlparams(self, kwargs):
         from imagestore.user import get_url_user
@@ -349,80 +356,80 @@ class PictureEntry(AtomEntry):
     def get_last_modified(self):
         return self.picture.modified_time
 
-    def render_html(self):
+    def _render_html(self, ns, *args, **kwargs):
         p = self.picture
         assert p is not None
 
         size = 'tiny'
         img = p.image(size)
         (width, height) = img.dimensions()
-        
-        htmltags = xhtml.ul([ xhtml.li(xhtml.a({ 'href':
-                                                 PictureSearchFeed(search=tag.canonical()).get_absolute_url() },
-                                               tag.render()))
-                              for tag in p.effective_tags() ])
+
+        htmltags = ns.ul([ ns.li(ns.a({ 'href':
+                                        PictureFeed(search=tag.canonical()).get_absolute_url() },
+                                      tag.render()))
+                           for tag in p.effective_tags() ])
 
         html_derivatives = []
         if p.derivatives.count() != 0:
-            html_derivatives = [ xhtml.dt('Derivatives'),
-                                 xhtml.dd(xhtml.ul([ xhtml.li(xhtml.a({'href': deriv.get_absolute_url() },
-                                                                      '%d: %s' % (deriv.id, deriv.get_title())))
-                                                     for deriv in p.derivatives.all() ])) ]
+            html_derivatives = [ ns.dt('Derivatives'),
+                                 ns.dd(ns.ul([ ns.li(ns.a({'href': deriv.get_absolute_url() },
+                                                          '%d: %s' % (deriv.id, deriv.get_title())))
+                                               for deriv in p.derivatives.all() ])) ]
 
         photog = ''
         if p.photographer is not None:
-            photog = [ xhtml.dt('Photographer'), xhtml.dd(microformat.hcard(p.photographer)) ]
+            photog = [ ns.dt('Photographer'), ns.dd(microformat.hcard(p.photographer)) ]
 
         derived_from = []
         if p.derived_from is not None:
-            derived_from = [ xhtml.dt('Derived from'),
-                             xhtml.dd(xhtml.a({'href': p.derived_from.get_absolute_url()},
-                                              '%d: %s' % (p.derived_from.id,
-                                                          p.derived_from.get_title()))) ]
+            derived_from = [ ns.dt('Derived from'),
+                             ns.dd(ns.a({'href': p.derived_from.get_absolute_url()},
+                                        '%d: %s' % (p.derived_from.id,
+                                                    p.derived_from.get_title()))) ]
 
 
-        content = [ xhtml.div({'class': 'image' },
-                              xhtml.a({'href': p.get_absolute_url()},
-                                      p.render_img())),
-                    xhtml.dl({ 'class': 'metadata' },
-                             xhtml.dt('Owner' ),
-                             xhtml.dd({'class': 'owner' }, microformat.hcard(p.owner)),
-                             photog,
-                             derived_from,
-                             html_derivatives,
-                             xhtml.dt('Taken'),
-                             xhtml.dd({'class': 'created-time'},
-                                      microformat.html_datetime(p.created_time)),
-                             xhtml.dt('Uploaded'),
-                             xhtml.dd({'class': 'uploaded-time'},
-                                      microformat.html_datetime(p.uploaded_time)),
-                             xhtml.dt('Modified'),
-                             xhtml.dd({'class': 'modified-time'},
-                                      microformat.html_datetime(p.modified_time)),
-                             xhtml.dt('Orientation'),
-                             xhtml.dd({'class': 'orientation'},
-                                      str(p.orientation)),
-                             xhtml.dt('Visibility'),
-                             xhtml.dd(xhtml.dfn({'class': 'visibility',
-                                                 'title': str(p.visibility) },
-                                                Picture.str_visibility(p.visibility))),
-                             xhtml.dt('Camera'),
-                             xhtml.dd(xhtml.a({'href': p.camera.get_absolute_url()},
-                                              p.camera.nickname),
-                                      ' ',
-                                      xhtml.a({'href': p.get_exif_url() }, 'Exif')),
-                             xhtml.dt({'class': 'tags'}, 'Tags'),
-                             xhtml.dd(htmltags),
-                             xhtml.dt('Description'),
-                             xhtml.dd(xhtml.p(p.description)),
-                             ),
-                    
+        content = [ ns.div({'class': 'image' },
+                           ns.a({'href': p.get_absolute_url()},
+                                p.render_img(ns=ns))),
+                    ns.dl({ 'class': 'metadata' },
+                          ns.dt('Owner' ),
+                          ns.dd({'class': 'owner' }, microformat.hcard(p.owner)),
+                          photog,
+                          derived_from,
+                          html_derivatives,
+                          ns.dt('Taken'),
+                          ns.dd({'class': 'created-time'},
+                                microformat.html_datetime(p.created_time)),
+                          ns.dt('Uploaded'),
+                          ns.dd({'class': 'uploaded-time'},
+                                microformat.html_datetime(p.uploaded_time)),
+                          ns.dt('Modified'),
+                          ns.dd({'class': 'modified-time'},
+                                microformat.html_datetime(p.modified_time)),
+                          ns.dt('Orientation'),
+                          ns.dd({'class': 'orientation'},
+                                str(p.orientation)),
+                          ns.dt('Visibility'),
+                          ns.dd(ns.dfn({'class': 'visibility',
+                                        'title': str(p.visibility) },
+                                       Picture.str_visibility(p.visibility))),
+                          ns.dt('Camera'),
+                          ns.dd(ns.a({'href': p.camera.get_absolute_url()},
+                                     p.camera.nickname),
+                                ' ',
+                                ns.a({'href': p.get_exif_url() }, 'Exif')),
+                          ns.dt({'class': 'tags'}, 'Tags'),
+                          ns.dd(htmltags),
+                          ns.dt('Description'),
+                          ns.dd(ns.p(p.description)),
+                          ),
 
-                    xhtml.a({'href': p.get_comment_url()},
-                            '%d comments' % p.comment_set.count()) ]
+                    ns.a({'href': p.get_comment_url()},
+                         '%d comments' % p.comment_set.count()) ]
+        
         return content
     
-    def render_atom(self, mimetype):
+    def render_atom(self):
         p = self.picture
         assert p is not None
 
@@ -440,7 +447,7 @@ class PictureEntry(AtomEntry):
                                'class': 'derivative' })
                     for deriv in p.derivatives.all() ]
 
-        content = self.render_html()
+        content = self._render_html(xhtml)
 
         ret = atom.entry(atom.id(self.picture.get_urn()),
                          atom.title(p.get_title()),
@@ -459,12 +466,13 @@ class PictureEntry(AtomEntry):
         if p.camera:
             ret.append(atom.link({ 'rel': 'camera', 'href': p.camera.get_absolute_url() }))
 
-        return (mimetype,ret)
+        return ret
 
     def do_POST(self, *args, **kwargs):
         return picture_upload(self, *args, **kwargs)
 
-class PictureExif(HtmlEntry):
+# Should this be just another format for picture?
+class PictureExif(restlist.Entry):
     __slots__ = [ 'picture' ]
     
     def urlparams(self, kwargs):
@@ -476,8 +484,11 @@ class PictureExif(HtmlEntry):
     def get_Etag(self):
         return '%s.exif' % self.picture.sha1hash
 
-    def render(self):
-        return microformat.exif(self.picture.exif())
+    def title(self):
+        return 'Exif for "%s"' % self.picture.get_title()
+
+    def _render_html(self, ns):
+        return microformat.exif(self.picture.exif(), ns=ns)
 
 class PictureImage(RestBase):
     """ Return the actual bits of a picture """
@@ -552,19 +563,43 @@ class PictureImage(RestBase):
         return ret
         
 class PictureFeed(AtomFeed):
-    __slots__ = [ 'urluser', '_query' ]
+    __slots__ = [ 'urluser', '_query', 'search' ]
 
-    def __init__(self):
-        self._query = None
+    def __init__(self, search=None):
         super(PictureFeed, self).__init__()
 
+        self.urluser = None
+
+        self.search = search
+        self.query = None
+        
+        self._query = None
+        self.add_type('timeline', 'application/xml', serialize_xml)
+
     def title(self):
-        return 'Pictures'
+        if self.search is not None:
+            return 'Pictures: "%s": %d results' % (self.search, self.results().count())
+        else:
+            return '%d Pictures' % self.results().count()
+
+    @permalink
+    def get_absolute_url(self):
+        if self.search:
+            return ('imagestore.picture.picturesearch',
+                    [ self.urluser, self.search ],
+                    { 'search': self.search, 'urluser': self.urluser })
+        else:
+            return ('imagestore.picture.picturefeed',
+                    [ self.urluser ],
+                    { 'urluser': self.urluser })
 
     def urlparams(self, kwargs):
         from imagestore.user import get_url_user
 
         self.urluser = get_url_user(kwargs)
+        self.search = kwargs.get('search', '').strip(' /+')
+        if self.search is not None:
+            self.query = SearchParser(self.search).query
 
     def filter(self):
         filter = Q()
@@ -572,6 +607,9 @@ class PictureFeed(AtomFeed):
         if self.urluser is not None:
             print 'filtering user %s' % self.urluser.username
             filter = filter & Q(owner = self.urluser)
+
+        if self.query is not None:
+            filter = filter & self.query
 
         return filter
     
@@ -607,7 +645,7 @@ class PictureFeed(AtomFeed):
         limit = 50
         try:
             limit = int(self.request.GET.get('limit', str(limit)))
-            limit = min(limit, 100)
+            limit = min(limit, 200)
         except ValueError:
             pass
 
@@ -656,63 +694,10 @@ class PictureFeed(AtomFeed):
         start,limit = self.limits()
         res = self.results(order)
 
-        return [ PictureEntry(p) for p in res[start : start+limit] ]
+        return [ PictureEntry(p, request=self.request) for p in res[start : start+limit] ]
 
-    
-    def do_POST(self, *args, **kwargs):
-        return picture_upload(self, *args, **kwargs)
-    
-class ParserException(Exception):
-    pass
 
-class TokenException(ParserException):
-    pass
-
-        
-class PictureSearchFeed(PictureFeed):
-    __slots__ = [ 'search', 'query' ]
-    
-    def __init__(self, search=None):
-        self.search = search
-        super(PictureSearchFeed, self).__init__()
-
-    @permalink
-    def get_absolute_url(self):
-        return ('imagestore.picture.picturesearch',
-                [ self.search ], { 'search': self.search })
-        
-    def urlparams(self, kwargs):
-        super(PictureSearchFeed, self).urlparams(kwargs)
-        self.search = kwargs.get('search', '').strip(' /+')
-        self.query = SearchParser(self.search).query
-
-    def filter(self):
-        return super(PictureSearchFeed, self).filter() & self.query
-
-    def title(self):
-        return 'Pictures: "%s": %d results' % (self.search, self.results().count())
-
-class PictureTimeline(RestBase):
-    def content_type(self):
-        return 'application/xml'
-
-    def urlparams(self, kwargs):
-        from imagestore.user import get_url_user
-
-        self.urluser = get_url_user(kwargs)
-
-    def filter(self):
-        filter = Q()
-        
-        if self.urluser is not None:
-            print 'filtering user %s' % self.urluser.username
-            filter = filter & Q(owner = self.urluser)
-    
-        return filter
-
-    def render(self):
-        timeline = Namespace()
-        html = Namespace()
+    def render_timeline(self, *args, **kwargs):
         def fmt(dt):
             return dt.strftime('%a %b %d %Y %T')
 
@@ -720,16 +705,14 @@ class PictureTimeline(RestBase):
             s = StringIO()
             ElementTree(et).write(s)
             return s.getvalue()
-
-        pics = Picture.objects.vis_filter(self.authuser, self.filter())
-        pics = pics.distinct().order_by('created_time')
-
         tl = timeline.data()
         
+        res = self.results('created_time')
+
         prev = None
         evt = None
         count = 0
-        for p in pics:
+        for p in res:
             if (prev is None or
                 (p.created_time - prev.created_time) > dt.timedelta(minutes=30)):
                 if evt is not None and count > 1:
@@ -748,8 +731,21 @@ class PictureTimeline(RestBase):
             d.append(html.p(p.render_img('tiny', ns=html)))
             evt.text += xmlstring(d)
 
+        if evt is not None and count > 1:
+            evt.attrib['title'] += ' (%d pics)' % count
+
         return tl
+
     
+    def do_POST(self, *args, **kwargs):
+        return picture_upload(self, *args, **kwargs)
+    
+class ParserException(Exception):
+    pass
+
+class TokenException(ParserException):
+    pass
+
 class Comment(models.Model):
     comment = models.TextField()
     user = models.ForeignKey(User)
@@ -788,8 +784,7 @@ class CommentEntry(AtomEntry):
 
 # Make a pile of distinct names so that reverse URL lookups work
 picturefeed     = PictureFeed()
-picturesearch   = PictureSearchFeed()
-picturetimeline = PictureTimeline()
+picturesearch   = PictureFeed()
 picture         = PictureEntry()
 pictureexif     = PictureExif()
 pictureimage    = PictureImage()
@@ -799,8 +794,7 @@ comment         = CommentEntry()
 urlpatterns = \
   patterns('',
            ('^$',                       picturefeed),
-           ('^timeline/',               picturetimeline),
-           ('^-/(?P<search>.*)/?$',      picturesearch),
+           ('^-/(?P<search>.*)$',       picturesearch),
            
            ('(?P<picid>[0-9]+)/$',                                      picture),
            ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),
@@ -810,6 +804,6 @@ urlpatterns = \
            )
 
 
-__all__ = [ 'Picture', 'PictureFeed', 'PictureSearchFeed',
+__all__ = [ 'Picture', 'PictureFeed',
             'PictureEntry', 'PictureImage', 'PictureExif',
             'Comment', 'CommentFeed', 'CommentEntry' ]

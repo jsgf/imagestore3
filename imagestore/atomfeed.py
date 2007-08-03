@@ -6,9 +6,9 @@ import ElementBuilder
 from imagestore.rest import RestBase
 from imagestore.namespace import atom, xhtml
 
-from imagestore.restlist import List, Entry
+from imagestore import restlist
 
-class AtomFeed(List):
+class AtomFeed(restlist.List):
     __slots__ = [ 'title', 'subtitle', 'uri' ]
 
     def __init__(self):
@@ -26,13 +26,10 @@ class AtomFeed(List):
     def preamble(self):
         return []
 
-    def content_type(self):
-        return content_type
-
     def opensearch(self):
         return None
     
-    def render(self):
+    def render_atom(self, *args, **kwargs):
         entries = self.entries()
 
         mod = self.get_last_modified()
@@ -46,19 +43,15 @@ class AtomFeed(List):
                          updated,
                          atom.subtitle(self.subtitle()),
                          atom.link({'ref': 'self', 'href': self.request.path}),
-                         [ e.render() for e in entries ])
+                         [ e.render_atom() for e in entries ])
 
         return feed
 
-class AtomEntry(Entry):
+class AtomEntry(restlist.Entry):
     def __init__(self):
         super(AtomEntry, self).__init__()
 
-
     def render_atom(self, *args, **kwargs):
-        r = self._render_atom()
-
-        e = self.generate()
         ret = atom.entry()
 
 def atomtime(td):

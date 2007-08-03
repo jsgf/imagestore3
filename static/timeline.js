@@ -56,11 +56,12 @@ function onLoad() {
   bandInfos[3].syncWith = 0;
   bandInfos[3].highlight = true;
   var camurl = '/imagestore/camera/?format=timeline';
+  var picurl = '/imagestore/image/?format=timeline&limit=1000';
 
   tl = Timeline.create(document.getElementById("my-timeline"), bandInfos);
-  Timeline.loadXML('/imagestore/image/timeline/', function(xml, url) { pictureSource.loadXML(xml, url); });
+  Timeline.loadXML(picurl, function(xml, url) { pictureSource.loadXML(xml, url); });
   Timeline.loadXML(camurl, function(xml, url) { cameraSource.loadXML(xml, url); });
-  Timeline.loadXML('/imagestore/image/timeline/', function(xml, url) { combinedSource.loadXML(xml, url); });
+  Timeline.loadXML(picurl, function(xml, url) { combinedSource.loadXML(xml, url); });
   Timeline.loadXML(camurl, function(xml, url) { combinedSource.loadXML(xml, url); });
 }
 
