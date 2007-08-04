@@ -22,9 +22,16 @@ class Entry(RestBase):
 
     def _html_frame(self, ns, inner):
         links = self.alt_links(ns)
-        
-        return ns.html(ns.head(links, ns.title(self.title())),
-                       ns.body(ns.h1(self.title()), inner))
+
+        title = self.title(ns)
+
+        headtitle = title
+        if hasattr(title, 'getiterator'):
+            headtitle = ''
+            headtitle = ''.join([ (e.text or '') + (e.tail or '') for e in title.getiterator() ])
+                
+        return ns.html(ns.head(links, ns.title(headtitle)),
+                       ns.body(ns.h1(title), inner))
 
     def render_html(self, *args, **kwargs):
         return self._html_frame(html, self._render_html(html, *args, **kwargs))

@@ -352,7 +352,7 @@ class PictureEntry(AtomEntry):
         if p is not None:
             self.picture = p
 
-    def title(self):
+    def title(self, ns):
         return self.picture.get_title()
 
     def urlparams(self, kwargs):
@@ -493,8 +493,9 @@ class PictureExif(restlist.Entry):
     def get_Etag(self):
         return '%s exif' % self.picture.sha1hash
 
-    def title(self):
-        return 'Exif for "%s"' % self.picture.get_title()
+    def title(self, ns):
+        return ns.span('Exif for ', ns.a('"%s"' % self.picture.get_title(),
+                                         href=self.picture.get_absolute_url()))
 
     def render_json(self):
         exif = {}
@@ -510,8 +511,9 @@ class PictureSizeList(restlist.Entry):
     def urlparams(self, kwargs):
         self.picture = get_url_picture(self.authuser, kwargs)
 
-    def title(self):
-        return 'Sizes for %s' % self.picture.get_title()
+    def title(self, ns):
+        return ns.span('Sizes for ', ns.a('%s' % self.picture.get_title(),
+                                          href=self.picture.get_absolute_url()))
 
     def generate(self):
         p = self.picture
@@ -530,8 +532,7 @@ class PictureSizeList(restlist.Entry):
     
     def _render_html(self, ns):
         p = self.picture
-        return ns.div(ns.a({'href': p.get_absolute_url()}, p.get_title()),
-                      ns.ol([ ns.li(ns.a({ 'href': url }, '%s: %dx%d' % (size, w, h)))
+        return ns.div(ns.ol([ ns.li(ns.a({ 'href': url }, '%s: %dx%d' % (size, w, h)))
                               for size,w,h,url in self.generate() ]))
         
 class PictureImage(RestBase):
@@ -622,7 +623,7 @@ class PictureFeed(AtomFeed):
         self._query = None
         self.add_type('timeline', 'application/xml', serialize_xml)
 
-    def title(self):
+    def title(self, ns):
         if self.search:
             return 'Pictures: "%s": %d results' % (self.search, self.results().count())
         else:
@@ -862,8 +863,11 @@ class Comment(models.Model):
 class CommentFeed(AtomFeed):
     __slots__ = [ 'picture' ]
     
-    def title(self):
-        return 'Comments for #%d: %s' % (self.picture.id, self.picture.get_title())
+    def title(self, ns):
+        return ns.span('Comments for ',
+                       ns.a('#%d: %s' % (self.picture.id, self.picture.get_title()),
+                            href=self.picture.get_absolute_url()))
+                      
 
     def urlparams(self, kwargs):
         self.picture = get_url_picture(self.authuser, kwargs)

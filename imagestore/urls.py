@@ -10,7 +10,7 @@ class Index(restlist.Entry):
                      ns.li(ns.a({'href': self.append_url_params('user/')}, 'Users')),
                      ns.li(ns.a({'href': self.append_url_params('tag/')}, 'Tags')))
 
-    def title(self):
+    def title(self, ns):
         return 'Imagestore'
 
 index = Index()

@@ -44,7 +44,7 @@ def get_url_user(kwargs):
     return User.objects.get(username = id)
 
 class UserList(restlist.List):
-    def title(self):
+    def title(self, ns):
         return 'Users'
 
     def _render_html(self, ns):
@@ -64,7 +64,7 @@ class UserEntry(restlist.Entry):
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
 
-    def title(self):
+    def title(self, ns):
         u = self.urluser
         return '%s %s' % (u.first_name, u.last_name)
 

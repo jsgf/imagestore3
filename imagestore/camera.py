@@ -80,8 +80,12 @@ class CameraList(restlist.List):
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
 
-    def title(self):
-        return '%s\'s cameras' % self.urluser.username
+    def title(self, ns):
+        if self.urluser:
+            return ns.span(ns.a('%s\'s' % self.urluser.username,
+                                href=self.urluser.get_profile().get_absolute_url()), ' cameras')
+        else:
+            return 'cameras'
 
     def render_timeline(self, *args, **kwargs):
         camtags = CameraTags.objects.all()
@@ -96,22 +100,25 @@ class CameraList(restlist.List):
         if self.urluser:
             cameras = cameras.filter(owner=self.urluser)
             
-        return [ CameraEntry(c) for c in cameras ]
+        return [ CameraEntry(c, request=self.request) for c in cameras ]
 
 class CameraEntry(restlist.Entry):
     __slots__ = [ 'camera', 'urluser' ]
     
-    def __init__(self, camera = None):
+    def __init__(self, camera = None, request = None):
         super(CameraEntry,self).__init__()
         self.add_type('timeline', 'application/xml', serialize_xml)
         if camera:
             self.camera = camera
 
+        if request:
+            self.request = request
+
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
         self.camera = get_url_camera(self.urluser, kwargs)
 
-    def title(self):
+    def title(self, ns):
         return self.camera.nickname
 
     def generate(self):
@@ -166,7 +173,7 @@ class CameraEntry(restlist.Entry):
                             ns.dt('pictures taken'),
                             ns.dd(ns.a({'href': self.append_url_params(up.get_search_url('camera:%s' % c.nickname))},
                                        str(c.picture_set.count()))),
-                            ns.dt('keywords'),
+                            ns.dt(ns.a('keywords', href=c.get_absolute_url() + 'tag/')),
                             ns.dd(ns.dl(*[ format_ct(ct)
                                            for ct in c.cameratags_set.all() ]))))
 
@@ -224,17 +231,73 @@ class CameraTags(models.Model):
     def html(self, ns=xhtml):
         return ns.div(ns.ul([ ns.li(t.render(ns=ns)) for t in self.tags.all() ]))
 
+    @permalink
+    def get_absolute_url(self):
+        return ('imagestore.camera.cameratag',
+                (self.camera.owner.username, self.camera.nickname, self.id),
+                { 'user': self.camera.owner.username,
+                  'camnick': self.camera.nickname,
+                  'camtagid': self.id })
+
     class Meta:
         ordering = [ 'start' ]
+
+def get_url_cameratag(camera, kwargs):
+    id = kwargs.get('camtagid', None)
+    if id is None:
+        return None
+
+    return CameraTags.objects.get(id=id, camera=camera)
+
+class CameraTagEntry(restlist.Entry):
+    def __init__(self, cameratag=None):
+        super(CameraTagEntry, self).__init__()
+        if cameratag:
+            self.cameratag = cameratag
+        
+    def urlparams(self, kwargs):
+        self.urluser = get_url_user(kwargs)
+        self.camera = get_url_camera(self.urluser, kwargs)
+        self.cameratag = get_url_cameratag(self.camera, kwargs)
+
+    def title(self, ns):
+        return ns.span(ns.a('%s\'s' % self.camera.nickname,
+                            href=self.camera.get_absolute_url()),
+                       ' tags for ',
+                       ns.a('%s-%s' % (self.cameratag.start, self.cameratag.end),
+                            href=self.cameratag.get_absolute_url()))
+
+    def _render_html(self, ns):
+        ct = self.cameratag
+        return [ ns.dt(ns.a(microformat.html_daterange(ct.daterange()),
+                            href=self.cameratag.get_absolute_url())),
+                 ns.dd(ns.ul([ ns.li(t.render()) for t in ct.tags.all() ])) ]
+        
+class CameraTagList(restlist.List):
+    def urlparams(self, kwargs):
+        self.urluser = get_url_user(kwargs)
+        self.camera = get_url_camera(self.urluser, kwargs)
+
+    def title(self, ns):
+        return ns.span('Tags for ', ns.a('%s\'s' % self.urluser.username,
+                                         href=self.urluser.get_profile().get_absolute_url()),
+                       ' ', ns.a(self.camera.nickname, href=self.camera.get_absolute_url()))
+
+    def generate(self):
+        return [ CameraTagEntry(ct) for ct in self.camera.cameratags_set.all() ]
 
 __all__ = [ 'Camera', 'get_camera', 'CameraTags' ]
 
 cameralist      = CameraList()
 camerauserlist  = CameraList()
+camerataglist   = CameraTagList()
+cameratag       = CameraTagEntry()
 camera          = CameraEntry()
 
 urlpatterns = \
   patterns('',
-           ('^$',                               cameralist),
-           ('^(?P<camnick>[a-zA-Z0-9_-]+)/$',   camera),
+           ('^$',                                       cameralist),
+           ('^(?P<camnick>[a-zA-Z0-9_-]+)/$',           camera),
+           ('^(?P<camnick>[a-zA-Z0-9_-]+)/tag/$',       camerataglist),
+           ('^(?P<camnick>[a-zA-Z0-9_-]+)/tag/(?P<camtagid>[0-9]+)/$',       cameratag),
            )

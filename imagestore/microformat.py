@@ -55,10 +55,10 @@ def hcard(u, ns=xhtml):
                         ns.span({'class': 'given-name'}, u.first_name),
                         ' ',
                         ns.span({'class': 'family-name'}, u.last_name)),
-                   ' (', ns.a({ 'href': u.get_absolute_url() },
-                              ns.span({'class': 'nickname'}, u.username)), ')',
-                   '<', ns.a({ 'href': 'mailto:%s' % u.email},
-                             ns.span({'class': 'email'}, u.email)), '>'
+                   ' (', ns.a({ 'href': u.get_absolute_url(), 'class': 'nickname' },
+                              u.username), ')',
+                   '<', ns.a({ 'href': 'mailto:%s' % u.email, 'class': 'email' },
+                             u.email), '>'
                    )
 
     if up.icon is not None:

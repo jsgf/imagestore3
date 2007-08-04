@@ -14,7 +14,7 @@ class AtomFeed(restlist.List):
     def __init__(self):
         super(AtomFeed, self).__init__()
 
-    def title(self):
+    def title(self, ns):
         return ''
 
     def subtitle(self):
