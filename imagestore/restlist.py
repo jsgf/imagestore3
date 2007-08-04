@@ -1,4 +1,5 @@
 import json
+import sha
 
 from imagestore.rest import RestBase
 
@@ -38,6 +39,18 @@ class List(Entry):
     def generate(self):
         for e in self.entries():
             yield e
+
+    def get_Etag(self):
+        count=0
+        sha1 = sha.new()
+        for e in self.generate():
+            et = e.get_Etag()
+            if et is not None:
+                count += 1
+                sha1.update(et)
+
+        if count > 0:
+            return sha1.digest().encode('hex')
 
     def _render_html(self, ns, *args, **kwargs):
         return ns.ul([ ns.li(e._render_html(ns, *args, **kwargs))

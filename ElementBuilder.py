@@ -51,8 +51,9 @@ ns.tag(a='5') == Element(QName('http://namespace/uri', 'tag', a='5')
 """
 
 #from elementtree import ElementTree
-from xml.etree import ElementTree
-basefactory = ElementTree.Element
+from xml.etree import ElementTree as _ElementTree
+from xml.etree.ElementTree import ElementTree
+basefactory = _ElementTree.Element
 if 0:
     from cElementTree import Element as basefactory
 
@@ -73,7 +74,7 @@ def Element(tag, attrib={}, *children, **extra):
 
     prevelem = None
     for arg in children:
-        if ElementTree.iselement(arg):
+        if _ElementTree.iselement(arg):
             element.append(arg)
             prevelem = arg
         else:
@@ -88,16 +89,16 @@ def Element(tag, attrib={}, *children, **extra):
                 except:
                     raise TypeError, "argument type to Element"
                 for item in it:
-                    if not ElementTree.iselement(item):
+                    if not _ElementTree.iselement(item):
                         raise TypeError, "invalid argument type to Element"
                     element.append(item)
     return element
 
 
-class QName(unicode, ElementTree.QName):
+class QName(unicode, _ElementTree.QName):
     """ Calling a QName creates an Element with the name as its tag """
     def __new__(cls, *args):
-        tmp = ElementTree.QName(*args)
+        tmp = _ElementTree.QName(*args)
         new = unicode.__new__(cls, tmp.text)
         new.text = new
         return new
@@ -120,7 +121,7 @@ class Namespace:
 
         if prefix is None:
             return
-        map = ElementTree._namespace_map
+        map = _ElementTree._namespace_map
         if uri in map or prefix in map.values():
             # prefix or URI already used
             return 

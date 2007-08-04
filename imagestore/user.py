@@ -1,7 +1,5 @@
 from __future__ import absolute_import
 
-from xml.etree.cElementTree import ElementTree
-
 from django.conf.urls.defaults import patterns, include
 from django.contrib.auth.models import User
 from django.db import models

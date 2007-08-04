@@ -2,9 +2,8 @@ from __future__ import absolute_import
 
 import string
 
-from ElementBuilder import Namespace
+from ElementBuilder import Namespace, ElementTree
 from cStringIO import StringIO
-from xml.etree.cElementTree import ElementTree
 
 from django.db import models
 from django.db.models import permalink

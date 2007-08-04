@@ -1,5 +1,3 @@
-from xml.etree.cElementTree import ElementTree
-
 from django.conf.urls.defaults import patterns, include
 from django.http import HttpResponse
 
