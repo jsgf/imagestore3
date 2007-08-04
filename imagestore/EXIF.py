@@ -789,7 +789,7 @@ class IFD_Tag(object):
         self.values=values
         
     def __str__(self):
-        return self.printable
+        return str(self.printable)
     
     def __repr__(self):
         return '(0x%04X) %s=%s @ %d' % (self.tag,
