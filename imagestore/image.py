@@ -31,7 +31,7 @@ fontsize = 12
 ########################################
 
 class Image(object):
-    sizes = {
+    _sizes = {
         'icon':         (   75,    75, 1),
         'stamp':        (  100,   100, 1),
         'thumb':        (  160,   160, 0),
@@ -39,15 +39,26 @@ class Image(object):
         'small':        (  640,   480, 0),
         'medium':       (  800,   600, 0),
         'large':        ( 1024,   768, 0),
+        'huge':         ( 1600,  1200, 0),
         'full':         (10000, 10000, 0),
-        'orig':         (10000, 10000, 0),
+        'orig':         (10001, 10001, 0),
         }
+
+    @staticmethod
+    def get_sizes():
+        ret = [ (k, w, h) for (k,(w,h,sq)) in Image._sizes.items() ]
+        ret.sort(lambda a,b: cmp(a[1] * a[2], b[1] * b[2]))
+
+        return ret
+        
+    def mimetype(self):
+        return self.pic.mimetype
 
     def __init__(self, pic, size):
         self.pic = pic
         self.size = size
 
-        assert size in Image.sizes
+        assert size in Image._sizes
 
         self.extension = mimetypes[pic.mimetype][0]
 
@@ -56,17 +67,23 @@ class StillImage(Image):
     def __init__(self, pic, size):
         super(StillImage, self).__init__(pic, size)
 
+    def mimetype(self):
+        if self.size == 'orig':
+            return self.pic.mimetype
+        else:
+            return 'image/jpeg'
+
     def dimensions(self):
         p = self.pic
         
         (w, h) = (p.width, p.height)
 
         # transpose width and height for 90deg rotate
-        if p.orientation in (90, 270):
+        if self.size != 'orig' and p.orientation in (90, 270):
             (w, h) = (h, w)
 
         # scale size
-        (sw, sh, sq) = Image.sizes[self.size]
+        (sw, sh, sq) = Image._sizes[self.size]
 
         # no scaling if original is smaller than output
         if w < sw and h < sw:
@@ -96,7 +113,7 @@ class StillImage(Image):
         if self.size == 'orig':
             return (p.media('orig'), p.mimetype)
 
-        (w, h, sq) = Image.sizes[self.size]
+        (w, h, sq) = Image._sizes[self.size]
         short = min(w,h) < 400
 
         args = []
@@ -141,7 +158,7 @@ class StillImage(Image):
         if min(w,h) >= 160:
             args.append('-box "#00000070" -fill white '
                         '-pointsize %(size)d -font %(font)s -encoding Unicode '
-                        '-draw "gravity SouthWest text 10,10 \\"%(brand)s#%(id)d %(copy)s\\"" '
+                        '-draw "gravity SouthWest text 4,4 \\"%(brand)s#%(id)d %(copy)s\\"" '
                         '-quality %(qual)d' % {
                 'font': font,
                 'size': fontsz,

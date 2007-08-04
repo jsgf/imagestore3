@@ -5,7 +5,6 @@ from fnmatch import fnmatch
 import json
 from cStringIO import StringIO
 from datetime import datetime
-from xml.etree.cElementTree import ElementTree
 import urllib
 
 from django.http import HttpResponseNotAllowed, HttpResponse, HttpResponseNotFound
@@ -13,6 +12,7 @@ from django.views.decorators.cache import cache_control
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
+from ElementBuilder import ElementTree
 from imagestore.namespace import html
 
 __all__ = [ 'RestBase', 'HttpResponseBadRequest', 'HttpResponseConflict',
@@ -35,7 +35,7 @@ class RestBase(object):
     GET does way too much work to satisfy a HEAD request."""
 
     __slots__ = [ 'types', 'back_types', 'format', 'mimetype',
-                  'request', 'args', 'kwargs', 'authuser' ]
+                  'request', 'args', 'kwargs', 'authuser', 'status_code' ]
 
     def __init__(self):
         self.authuser = None
@@ -164,11 +164,9 @@ class RestBase(object):
         
         return '%s?%s' % (base, urllib.urlencode(param))
 
-    def render(self, format=None, *args, **kwargs):
+    def determine_format(self, format=None):
         """
-        Generate the content for the current request.  Generally used
-        for GET, but it may generate the body of a POST/PUT.  We
-        determine the appropriate format for the content by either
+        We determine the appropriate format for the content by either
         using an explicit format=X GET parameter, or from looking at
         the Accept: header and matching it against what we provide.
 
@@ -196,9 +194,14 @@ class RestBase(object):
             return self.not_acceptible(requested)
 
         self.format = format
-        self.mimetype = self.types[format][0]
+        self.mimetype = self.types[format][0]        
 
-        return (getattr(self, 'render_%s' % format))(*args, **kwargs)
+    def render(self, format=None, *args, **kwargs):
+        """
+        Generate the content for the current request.  Generally used
+        for GET, but it may generate the body of a POST/PUT.
+        """
+        return (getattr(self, 'render_%s' % self.format))(*args, **kwargs)
     
     def do_GET(self, *args, **kwarg):
         return self.render()
@@ -207,7 +210,7 @@ class RestBase(object):
         resp = self.do_GET(self.request, *args, **kwargs)
         if not isinstance(resp, HttpResponse):
             resp = HttpResponse(mimetype=self.mimetype)
-        if resp.status_code == 200:
+        if resp.status_code/100 == 2:
             resp.content = ''
             resp['Content-Length'] = '0'
             
@@ -223,7 +226,7 @@ class RestBase(object):
         # Handle ETag
         et = self.get_Etag()
         if et is not None:
-            et = '"%s"' % et
+            et = '"%s %s"' % (self.format, et)
                 
             ifnm = request.META.get('HTTP_IF_NONE_MATCH', None)
             if ifnm is not None:
@@ -242,7 +245,12 @@ class RestBase(object):
                     self.knobble(response)
             response['Last-Modified'] = lm.strftime('%a, %d %b %Y %H:%M:%S GMT')
 
-
+    def make_response(self, body):
+        response = HttpResponse(mimetype = self.mimetype)
+        response.status_code = self.status_code
+        ser = self.types[self.format][1]
+        ser(body, response)
+        return response
 
     @cache_control(no_cache=True)
     def __call__(self, request, *args, **kwargs):
@@ -256,6 +264,8 @@ class RestBase(object):
         if not hasattr(self, 'do_%s' % request.method):
             allowed = [ m.lstrip('do_') for m in dir(self) if m.startswith('do_') ]
             return HttpResponseNotAllowed(allowed)
+
+        self.determine_format()
         
         method = getattr(self, 'do_%s' % request.method)
 
@@ -263,17 +273,15 @@ class RestBase(object):
             self.urlparams(kwargs)
         except ObjectDoesNotExist, e:
             return HttpResponseNotFound(e.message)
-        
-        ret = method(self, *args, **kwargs)
+
+        self.status_code = 200
+        ret = method(*args, **kwargs)
 
         if isinstance(ret, HttpResponse):
             response = ret
         else:
-            response = HttpResponse(mimetype = self.mimetype)
-            ser = self.types[self.format][1]
-            if ser is not None:
-                ser(ret, response)
-
+            response = self.make_response(ret)
+            
         cl = self.get_content_length()
         if cl is not None and not response.has_header('Content-Length'):
             response['Content-Length'] = str(cl)

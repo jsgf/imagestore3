@@ -5,7 +5,6 @@ import string, re
 import types
 from cStringIO import StringIO
 import datetime as dt
-from xml.etree.cElementTree import ElementTree
 
 from django.db import models
 from django.db.models import permalink, Q
@@ -15,7 +14,7 @@ from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 from django.core.exceptions import ObjectDoesNotExist
 
-from ElementBuilder import Namespace
+from ElementBuilder import Namespace, ElementTree
 
 from imagestore.media import Media
 from imagestore.tag import Tag
@@ -29,6 +28,8 @@ from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
 from imagestore.namespace import atom, imst, html, xhtml, opensearch, timeline
 from imagestore.daterange import daterange
 from imagestore.search import SearchParser
+
+__all__ = [ 'Picture' ]
 
 class FilteredPictures(models.Manager):
     @staticmethod
@@ -180,6 +181,9 @@ class Picture(models.Model):
     def get_exif_url(self):
         return '%sexif/' % self.get_absolute_url()
 
+    def get_derivatives_url(self):
+        return '%sderived/' % self.get_absolute_url()
+
     def get_comment_url(self):
         return '%scomment/' % self.get_absolute_url()
 
@@ -266,7 +270,9 @@ def get_url_picture(authuser, kwargs):
 
     return Picture.get(authuser, int(id))
 
-def picture_upload(self, derived_from=None, *args, **kwargs):
+def picture_upload(self, owner, **kwargs):
+    request = self.request
+    
     def test_exists(sha1):
         try:
             # unfiltered visibility OK here, since unique is unique
@@ -275,16 +281,16 @@ def picture_upload(self, derived_from=None, *args, **kwargs):
         except:
             return False
 
-    client_sha1 = self.request.POST.get('sha1hash', None)
+    client_sha1 = request.POST.get('sha1hash', None)
 
-    file = self.request.FILES.get('image')
+    file = request.FILES.get('image')
     if file is None:
         # Implement "look before you leap".  If the client gives
         # us a hash but no image data, and expects a continue
         # response, then check to see if the hash matches any
-        # existing image, to save them from having to download the
+        # existing image, to save them from having to upload the
         # data before finding that out.
-        expect = self.request.META.get('HTTP_EXPECT', None)
+        expect = request.META.get('HTTP_EXPECT', None)
         print 'client_sha1=%s expect="%s"' % (client_sha1, expect)
         if (client_sha1 is not None and
             expect is not None and
@@ -295,7 +301,7 @@ def picture_upload(self, derived_from=None, *args, **kwargs):
         return HttpResponseBadRequest('Need image data\n')
 
     # XXX allow unauthenticated uploads for now
-    if self.urluser is None: # != self.authuser:
+    if owner is None: # != self.authuser:
         return HttpResponseForbidden('Need owner for image\n')
 
     data = file['content']
@@ -312,24 +318,26 @@ def picture_upload(self, derived_from=None, *args, **kwargs):
     if test_exists(hash):
         return HttpResponseConflict('Picture %s already exists\n' % hash)
 
-    title = self.request.POST.get('title', '')
+    title = request.POST.get('title', '')
 
     file = StringIO(data)
-    p = image.importer(file, owner=self.urluser, title=title,
+    p = image.importer(file, owner=owner, title=title,
                        original_ref=filename,
                        sha1hash=hash, visibility=Picture.PUBLIC,
-                       mimetype=type)
+                       mimetype=type, **kwargs)
 
-    if 'tags' in self.request.POST:
-        p.add_tags(self.request.POST['tags'])
+    if 'tags' in request.POST:
+        p.add_tags(request.POST['tags'])
 
     entry = PictureEntry(p)
     entry.request = self.request
-    ret = entry.do_GET()
-    ret['Location'] = p.get_absolute_url()
-    ret.response_code = 201         # created
+    entry.determine_format(self.format)
+    
+    resp = self.make_response(entry.render(format=self.format))
+    resp['Location'] = p.get_absolute_url()
+    resp.status_code = 201         # created
 
-    return ret
+    return resp
         
 
 class PictureEntry(AtomEntry):
@@ -356,6 +364,10 @@ class PictureEntry(AtomEntry):
     def get_last_modified(self):
         return self.picture.modified_time
 
+    def get_Etag(self):
+        p = self.picture
+        return '%s %s' % (p.sha1hash, p.modified_time.isoformat())
+
     def _render_html(self, ns, *args, **kwargs):
         p = self.picture
         assert p is not None
@@ -371,7 +383,7 @@ class PictureEntry(AtomEntry):
 
         html_derivatives = []
         if p.derivatives.count() != 0:
-            html_derivatives = [ ns.dt('Derivatives'),
+            html_derivatives = [ ns.dt(ns.a({ 'href':p.get_derivatives_url() }, 'Derivatives')),
                                  ns.dd(ns.ul([ ns.li(ns.a({'href': self.append_url_params(deriv.get_absolute_url()) },
                                                           '%d: %s' % (deriv.id, deriv.get_title())))
                                                for deriv in p.derivatives.all() ])) ]
@@ -468,9 +480,6 @@ class PictureEntry(AtomEntry):
 
         return ret
 
-    def do_POST(self, *args, **kwargs):
-        return picture_upload(self, *args, **kwargs)
-
 # Should this be just another format for picture?
 class PictureExif(restlist.Entry):
     __slots__ = [ 'picture' ]
@@ -482,14 +491,49 @@ class PictureExif(restlist.Entry):
         return self.picture.modified_time
 
     def get_Etag(self):
-        return '%s.exif' % self.picture.sha1hash
+        return '%s exif' % self.picture.sha1hash
 
     def title(self):
         return 'Exif for "%s"' % self.picture.get_title()
 
+    def render_json(self):
+        exif = {}
+        for k,v in self.picture.exif().items():
+            if k != 'JPEGThumbnail':
+                exif[(k, v.tag)] = v.values
+        return exif
+
     def _render_html(self, ns):
         return microformat.exif(self.picture.exif(), ns=ns)
 
+class PictureSizeList(restlist.Entry):
+    def urlparams(self, kwargs):
+        self.picture = get_url_picture(self.authuser, kwargs)
+
+    def title(self):
+        return 'Sizes for %s' % self.picture.get_title()
+
+    def generate(self):
+        p = self.picture
+
+        ret = []
+        for size,width,height in image.Image.get_sizes():
+            img = image.ImageProcessor(p, size)
+            (w,h) = img.dimensions()    # actual width and height
+
+            ret.append((size, w, h, p.get_picture_url(size)))
+
+        return ret
+
+    def render_json(self):
+        return self.generate()
+    
+    def _render_html(self, ns):
+        p = self.picture
+        return ns.div(ns.a({'href': p.get_absolute_url()}, p.get_title()),
+                      ns.ol([ ns.li(ns.a({ 'href': url }, '%s: %dx%d' % (size, w, h)))
+                              for size,w,h,url in self.generate() ]))
+        
 class PictureImage(RestBase):
     """ Return the actual bits of a picture """
 
@@ -509,8 +553,7 @@ class PictureImage(RestBase):
         m = self.picture.media(self.size)
         ret = None
         if m is not None:
-            ret = m.sha1hash
-        print '%d.%s = %s' % (self.picture.id, self.size, ret)
+            ret = '%s' % m.sha1hash
         return ret
 
     def get_content_length(self):
@@ -554,7 +597,10 @@ class PictureImage(RestBase):
         if m is None:
             return HttpResponseNotFound('image %d has no size "%s"' % (p.id, size))
 
-        ret = HttpResponse(m.chunks(), mimetype=p.mimetype)
+        self.format = 'image'
+        self.mimetype = image.mimetype()
+
+        ret = HttpResponse(m.chunks(), mimetype=image.mimetype())
 
         # Make sure saving the image gives a useful filename
         ret['Content-Disposition'] = ('inline; filename="%d-%s.%s"' %
@@ -597,8 +643,9 @@ class PictureFeed(AtomFeed):
         from imagestore.user import get_url_user
 
         self.urluser = get_url_user(kwargs)
-        self.search = kwargs.get('search', '').strip(' /+')
+        self.search = kwargs.get('search', '')
         if self.search is not None:
+            self.search = self.search.strip(' /+')
             self.query = SearchParser(self.search).query
 
     def filter(self):
@@ -775,9 +822,26 @@ class PictureFeed(AtomFeed):
 
         return tl
 
-    
     def do_POST(self, *args, **kwargs):
-        return picture_upload(self, *args, **kwargs)
+        return picture_upload(self, owner=self.urluser)
+
+class DerivedPictureFeed(PictureFeed):
+    @permalink
+    def get_absolute_url(self):
+        return ('imagestore.picture.picturederived',
+                [ self.basepic.id, self.search ],
+                { 'picid': self.basepic.id, 'search': self.search })
+
+    def urlparams(self, kwargs):
+        super(DerivedPictureFeed,self).urlparams(kwargs)
+        self.basepic = get_url_picture(self.authuser, kwargs)
+
+    def filter(self):
+        return super(DerivedPictureFeed, self).filter() & Q(derived_from = self.basepic)
+
+    def do_POST(self, *args, **kwargs):
+        print 'args=%s kwargs=%s' % (args, kwargs)
+        return picture_upload(self, owner=self.urluser, derived_from=self.basepic)
     
 class ParserException(Exception):
     pass
@@ -826,7 +890,9 @@ picturefeed     = PictureFeed()
 picturesearch   = PictureFeed()
 picture         = PictureEntry()
 pictureexif     = PictureExif()
+picturesizelist = PictureSizeList()
 pictureimage    = PictureImage()
+picturederived  = DerivedPictureFeed()
 commentfeed     = CommentFeed()
 comment         = CommentEntry()
 
@@ -837,12 +903,9 @@ urlpatterns = \
            
            ('(?P<picid>[0-9]+)/$',                                      picture),
            ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),
-           ('(?P<picid>[0-9]+)/pic/(?P<size>[a-z]*)(?:\.[a-z]*)?/?$',   pictureimage),
+           ('(?P<picid>[0-9]+)/derived/(?:-/(?P<search>.*))?$',         picturederived),
+           ('(?P<picid>[0-9]+)/pic/$',                                  picturesizelist),
+           ('(?P<picid>[0-9]+)/pic/(?P<size>[a-z]*)(?:\.[a-z]*)/?$',    pictureimage),
            ('(?P<picid>[0-9]+)/comment/$',                              commentfeed),
            ('(?P<picid>[0-9]+)/comment/(?P<commentid>[0-9]+)/?$',       comment),
            )
-
-
-__all__ = [ 'Picture', 'PictureFeed',
-            'PictureEntry', 'PictureImage', 'PictureExif',
-            'Comment', 'CommentFeed', 'CommentEntry' ]
