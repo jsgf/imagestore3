@@ -262,7 +262,8 @@ class RestBase(object):
         self.kwargs = kwargs
 
         print 'authuser=%s' % request.user
-        self.authuser = request.user
+        if request.user.is_authenticated():
+            self.authuser = request.user
         
         if not hasattr(self, 'do_%s' % request.method):
             allowed = [ m.lstrip('do_') for m in dir(self) if m.startswith('do_') ]

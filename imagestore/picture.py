@@ -199,10 +199,7 @@ class Picture(models.Model):
         return self.media(variant).chunks()
 
     def get_urn(self):
-        return 'urn:picture:%d' % self.id
-
-    # XXX the user here doesn't really matter, since this is just a redirection service
-    urn.register('picture', lambda urn: Picture.get(user=None, id=int(urn[0])))
+        return self.get_absolute_url()
 
     def exif(self):
         img = string.join([ v for v in self.chunks() ], '')
@@ -262,6 +259,44 @@ class Picture(models.Model):
     def del_tags(self, tags):
         for t in self.canon_tags(tags, create=False):
             self.tags.remove(t)
+
+    def edit_formspec(self, ns):
+        """ A form for editing a picture.  XXX there must be a way of
+        deriving this from the model more automatically; ideally using
+        some django code."""
+        vis = ns.select(name='visibility')
+        for v in (Picture.PUBLIC, Picture.RESTRICTED, Picture.PRIVATE):
+            r = ns.option(Picture.str_visibility(v), name='visibility', value=str(v))
+            if v == self.visibility:
+                r.attrib['selected'] = 'yes'
+            vis.append(r)
+
+        orient = ns.span()
+        for o in (0, 90, 180, 270):
+            r = ns.input(type='radio', name='orientation', value=str(o))
+            if o == self.orientation:
+                r.attrib['checked'] = 'yes'
+            orient.append(ns.label(str(o), r))
+            
+        inputs = [ ns.input(name='title', type='text', value=self.title),
+                   ns.input(name='tags', type='text',
+                            value=', '.join([ t.canonical() for t in self.tags.all() ])),
+                   ns.input(name='derived_from', type='text',
+                            value=(self.derived_from and
+                                   self.derived_from.get_absolute_url() or '')),
+                   ns.input(name='original_ref', type='text', value=self.original_ref),
+                   ns.input(name='deleted', type='checkbox', value=str(self.deleted)),
+                   ns.textarea(name='description', cols='60', rows='10', value=self.description),
+                   vis,
+                   orient,
+                   ns.input(type='submit'),
+                   ns.input(type='reset'),
+                   ]
+        
+        return ns.form({'method': 'post', 'action': self.get_absolute_url(),
+                        'enctype': 'multipart/form-data' },
+                       ns.ul(*[ ns.li('name' in e.attrib and ns.label(e.attrib['name'], e) or e)
+                                for e in inputs ]))
 
 def get_url_picture(authuser, kwargs):
     id = kwargs.get('picid', None)
@@ -438,6 +473,8 @@ class PictureEntry(AtomEntry):
 
                     ns.a({'href': self.append_url_params(p.get_comment_url())},
                          '%d comments' % p.comment_set.count()) ]
+
+        content.append(p.edit_formspec(ns))
         
         return content
     

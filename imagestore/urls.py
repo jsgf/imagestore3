@@ -29,6 +29,5 @@ urlpatterns = patterns('',
             ('^image/',                 include('imagestore.picture')),
             ('^user/',                  include('imagestore.user')),
             ('^tag/',                   include('imagestore.tag')),
-#            ('^(?P<urn>urn:[^/]*)/(?P<rest>.*)$', include('imagestore.urn')),
 #            ('^test/$',         'imagestore.rest.test'),
 )

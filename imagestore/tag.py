@@ -164,9 +164,9 @@ class TagEntry(restlist.Entry):
         return '%s' % (t.description or t.canonical())
 
     def rendertag(self, ns):
-        return [ ns.dt(ns.a(ns.span(self.tag.canonical()),
-                            href=self.tag.get_absolute_url())),
-                 ns.dd(ns.span(self.tag.description or '')) ]
+        return (ns.a(self.tag.canonical(),
+                     href=self.tag.get_absolute_url()),
+                self.tag.description or '')
 
     def _render_html(self, ns):
         from imagestore.picture import picturefeed, Picture
@@ -277,11 +277,11 @@ class TagList(restlist.List):
         return [ TagEntry(t) for t in result ]
 
     def _render_html(self, ns, *args, **kwargs):
-        ret = ns.dl()
+        ret = ns.dl({'class': 'tags'})
         for e in self.generate():
             dt,dd = e.rendertag(ns)
-            ret.append(dt)
-            ret.append(dd)
+            ret.append(ns.dt({'class': 'tag'}, dt))
+            ret.append(ns.dd({'class': 'tagdesc'}, dd))
         return ret
 
 class TagComplete(TagList):

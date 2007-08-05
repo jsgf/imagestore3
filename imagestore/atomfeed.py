@@ -39,7 +39,7 @@ class AtomFeed(restlist.List):
 
         feed = atom.feed(self.preamble(atom),
                          self.opensearch(),
-                         atom.title(self.title()),
+                         atom.title(self.title(xhtml)),
                          updated,
                          atom.subtitle(self.subtitle()),
                          atom.link({'ref': 'self', 'href': self.request.path}),
@@ -61,4 +61,4 @@ def atomperson(self):
     return [ atom.name('%s %s' % (self.first_name, self.last_name)),
              atom.email(self.email),
              atom.username(self.username), 
-             atom.id('urn:user:%d' % self.id) ]
+             atom.id('%s' % self.get_profile().get_absolute_url()) ]
