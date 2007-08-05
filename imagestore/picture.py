@@ -108,7 +108,7 @@ class Picture(models.Model):
     
     camera = models.ForeignKey('Camera', null=True,
                                verbose_name="camera which took this picture")
-    owner = models.ForeignKey(User, related_name='owned_pics')
+    owner = models.ForeignKey(User, related_name='pictures')
     visibility = models.PositiveSmallIntegerField("visibility rights of this picture",
                                                   db_index=True,
                                                   choices=((PUBLIC, 'Public'),
@@ -378,7 +378,7 @@ class PictureEntry(AtomEntry):
 
         htmltags = ns.ul([ ns.li(ns.a({ 'href':
                                         self.append_url_params(PictureFeed(search=tag.canonical()).get_absolute_url()) },
-                                      tag.render()))
+                                      tag._render_html(ns)))
                            for tag in p.effective_tags() ])
 
         html_derivatives = []
@@ -640,6 +640,13 @@ class PictureFeed(AtomFeed):
                     [ self.urluser ],
                     { 'urluser': self.urluser })
 
+    def get_search_url(self, search):
+        if not self.search:
+            return '%s-/%s/' % (self.get_absolute_url(), search)
+        else:
+            return '%s%s/' % (self.get_absolute_url(), search)
+        
+
     def urlparams(self, kwargs):
         from imagestore.user import get_url_user
 
@@ -844,12 +851,6 @@ class DerivedPictureFeed(PictureFeed):
         print 'args=%s kwargs=%s' % (args, kwargs)
         return picture_upload(self, owner=self.urluser, derived_from=self.basepic)
     
-class ParserException(Exception):
-    pass
-
-class TokenException(ParserException):
-    pass
-
 class Comment(models.Model):
     comment = models.TextField()
     user = models.ForeignKey(User)

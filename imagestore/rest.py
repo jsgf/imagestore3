@@ -261,6 +261,9 @@ class RestBase(object):
         self.args = args
         self.kwargs = kwargs
 
+        print 'authuser=%s' % request.user
+        self.authuser = request.user
+        
         if not hasattr(self, 'do_%s' % request.method):
             allowed = [ m.lstrip('do_') for m in dir(self) if m.startswith('do_') ]
             return HttpResponseNotAllowed(allowed)
@@ -281,7 +284,7 @@ class RestBase(object):
             response = ret
         else:
             response = self.make_response(ret)
-            
+
         cl = self.get_content_length()
         if cl is not None and not response.has_header('Content-Length'):
             response['Content-Length'] = str(cl)

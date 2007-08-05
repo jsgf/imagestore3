@@ -154,7 +154,7 @@ class CameraEntry(restlist.Entry):
         
         def format_ct(ct):
             return [ ns.dt(microformat.html_daterange(ct.daterange())),
-                     ns.dd(ns.ul([ ns.li(t.render()) for t in ct.tags.all() ])) ]
+                     ns.dd(ns.ul([ ns.li(t._render_html(ns)) for t in ct.tags.all() ])) ]
 
         u = c.owner
         up = c.owner.get_profile()
@@ -229,7 +229,7 @@ class CameraTags(models.Model):
         return daterange(self.start, self.end)
 
     def html(self, ns=xhtml):
-        return ns.div(ns.ul([ ns.li(t.render(ns=ns)) for t in self.tags.all() ]))
+        return ns.div(ns.ul([ ns.li(t._render_html(ns=ns)) for t in self.tags.all() ]))
 
     @permalink
     def get_absolute_url(self):
@@ -271,7 +271,7 @@ class CameraTagEntry(restlist.Entry):
         ct = self.cameratag
         return [ ns.dt(ns.a(microformat.html_daterange(ct.daterange()),
                             href=self.cameratag.get_absolute_url())),
-                 ns.dd(ns.ul([ ns.li(t.render()) for t in ct.tags.all() ])) ]
+                 ns.dd(ns.ul([ ns.li(t._render_html(ns)) for t in ct.tags.all() ])) ]
         
 class CameraTagList(restlist.List):
     def urlparams(self, kwargs):

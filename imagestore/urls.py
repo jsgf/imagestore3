@@ -1,5 +1,7 @@
-from django.conf.urls.defaults import patterns, include
+
+from django.db.models import permalink
 from django.http import HttpResponse
+from django.conf.urls.defaults import patterns, include
 
 from imagestore.namespace import xhtml
 from imagestore import restlist
@@ -13,6 +15,10 @@ class Index(restlist.Entry):
     def title(self, ns):
         return 'Imagestore'
 
+@permalink
+def base_url():
+    return ('imagestore.urls.index', (), {})
+
 index = Index()
 
 # Order matters here, so that we get the reverse lookup correct
@@ -22,6 +28,7 @@ urlpatterns = patterns('',
             ('^camera/$',               'imagestore.camera.cameralist'),
             ('^image/',                 include('imagestore.picture')),
             ('^user/',                  include('imagestore.user')),
-            ('^(?P<urn>urn:[^/]*)/(?P<rest>.*)$', include('imagestore.urn')),
-            ('^test/$',         'imagestore.rest.test'),
+            ('^tag/',                   include('imagestore.tag')),
+#            ('^(?P<urn>urn:[^/]*)/(?P<rest>.*)$', include('imagestore.urn')),
+#            ('^test/$',         'imagestore.rest.test'),
 )

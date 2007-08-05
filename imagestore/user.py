@@ -11,7 +11,7 @@ from imagestore.namespace import xhtml
 import imagestore.microformat as microformat
 
 class UserProfile(models.Model):
-    user = models.ForeignKey(User, unique=True, core=True,
+    user = models.ForeignKey(User, unique=True, core=True, related_name='profile',
                              edit_inline=models.STACKED)
     
     friends = models.ManyToManyField(User, core=True, related_name='friends')
@@ -94,8 +94,9 @@ class UserEntry(restlist.Entry):
 
         detail.append(ns.dt('pictures'))
         detail.append(ns.dd(ns.a({ 'href': self.append_url_params(up.get_image_url()) },
-                                       str(u.owned_pics.count()))))
-
+                                       str(u.pictures.count()))))
+        detail.append(ns.dt(ns.a('tags', href='tag/')))
+        
         return content
 
     def get_absolute_url(self):
@@ -112,14 +113,16 @@ urlpatterns = patterns('',
                        ('^(?P<user>[^/]+)/$',           user),
                        ('^(?P<user>[^/]+)/image/',      include('imagestore.picture')),
                        ('^(?P<user>[^/]+)/camera/',     include('imagestore.camera')),
+                       ('^(?P<user>[^/]+)/tag/$',       'imagestore.tag.usertaglist'),
+                       ('^(?P<user>[^/]+)/tag/(?P<tagpart>[a-zA-Z0-9_ -]+)/$',       'imagestore.tag.usertagcomplete'),
                        )
 
 def setup():
     # Make sure everyone has a userprofile
     # XXX how to hook user creation?
     for u in User.objects.all():
-        if u.userprofile_set.count() == 0:
-            u.userprofile_set.create()
+        if u.profile.count() == 0:
+            u.profile.create()
 
 setup()
 

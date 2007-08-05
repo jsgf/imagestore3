@@ -67,6 +67,12 @@ tokens = [ TOK_owner, TOK_vis, TOK_camera, TOK_photog,
            TOK_lp, TOK_rp, TOK_comma,
            TOK_eof ]
 
+class ParserException(Exception):
+    pass
+
+class TokenException(ParserException):
+    pass
+
 class SearchParser(object):
     __slots__ = [ 'search', 'query' ]
     
