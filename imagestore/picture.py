@@ -96,15 +96,15 @@ class Picture(models.Model):
 
     created_time = models.DateTimeField("time picture was taken", db_index=True)
     uploaded_time = models.DateTimeField("time picture was uploaded",
-                                         auto_now_add=True, db_index=True)
+                                         auto_now_add=True, db_index=True, editable=False)
     modified_time = models.DateTimeField("time picture was last modified",
-                                         auto_now=True, db_index=True)
+                                         auto_now=True, db_index=True, editable=False)
 
     original_ref = models.CharField("external reference for picture",
                                     maxlength=100, blank=True)
 
     deleted = models.BooleanField('picture is logically deleted',
-                                  editable=True, default=False)
+                                  editable=False, default=False)
     
     camera = models.ForeignKey('Camera', null=True,
                                verbose_name="camera which took this picture")
@@ -885,7 +885,6 @@ class DerivedPictureFeed(PictureFeed):
         return super(DerivedPictureFeed, self).filter() & Q(derived_from = self.basepic)
 
     def do_POST(self, *args, **kwargs):
-        print 'args=%s kwargs=%s' % (args, kwargs)
         return picture_upload(self, owner=self.urluser, derived_from=self.basepic)
     
 class Comment(models.Model):
