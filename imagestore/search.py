@@ -1,365 +1,331 @@
 import re
 
+import datetime as dt
+
 from django.db.models.query import Q, QNot
 
 from imagestore.tag import Tag
+from imagestore.daterange import daterange
 
 __all__ = [ 'SearchParser' ]
 
-#
-# Tokens
-#
-# Group "v" contains the interesting token value; even
-#       valueless tokens have one for consistency
-#
-TOK_owner       = re.compile(r'owner:(?P<v>[a-z][a-z0-9_-]+)', re.I | re.U)
-TOK_photog      = re.compile(r'photog:(?P<v>[a-z][a-z0-9_-]+)', re.I | re.U)
-TOK_vis         = re.compile(r'vis:(?P<v>public|restricted|private)', re.I)
-TOK_camera      = re.compile(r'camera:(?P<v>[a-z0-9 _-]+)', re.I)
-TOK_reserved    = re.compile(r'(?P<v>[a-z]+):', re.I)
+tokens = []
+tokre = None
 
-tagre           = '[a-z][a-z0-9_ -]*'
-TOK_tag         = re.compile(r'(?P<v>%s)' % tagre, re.I | re.U)
-TOK_qualtag     = re.compile(r'(?P<v>(?::%s)+:*\*?)' % tagre,
-                             re.I | re.U)
+def mktokre():
+    regex = []
+    idx = 0
+    tokens = []
+    
+    for t in [ ('number',  r'\d+'),
+               ('ident',   r'[^\d\W]\w*'),
+               (':', ),
+               ('/', ),
+               (',', ),
+               ('&', ),
+               ('|', '\|'),
+               ('-', ),
+               ('*', '\*'),
+               ('(', '\\('),
+               (')', '\\)'),
+               ('<', ),
+               ('<=', ),
+               ('=', ),
+               ('>=', ),
+               ('>', ),
+               ('eof', '$') ]:
+        name=t[0]
+        pattern=name
 
-# DATE := -?(YYYY-MM-DDTHH:MM:SS+TZ|(now|today))
-datere          = r'''
-(?:(?:\d{4}(?:-\d{1,2}(?:-\d{1,2}(?:T\d{1,2}:\d{1,2}(?::\d{1,2})?)?)?)?(?:\+(?:[+-])?\d{1,2})?)
-| (?:today|now))
-'''
-# DATERANGE := DATE
-#            | DATE,DATE
-#            | (day|week|month|year)':'DATE
-daterange_re       = r'''
-(?:(?P<start>%(re)s),(?P<end>%(re)s))
-|(?:(?P<date>%(re)s)
-|(?:(?P<period>day|week|month|year):(?P<per_date>-?%(re)s)))
-''' % { 're': datere }
-# DATERELATION := (<|<=|=|>=|>)? DATERANGE
-daterel         = r'(?:(?P<rel><|<=|=|>=|>|)%(dr)s)' % { 'dr': daterange_re }
+        try:
+            pattern = t[1]
+        except IndexError:
+            pass
+        regex.append('(%s)' % pattern)
+        idx += 1
+        tokens.append(name)
+    regex = ' *(?:%s)' % '|'.join(regex)
+    print 'regex=%s' % regex
+    return (re.compile(regex, re.I | re.U), tokens)
+    
+tokre,tokens = mktokre()
+del mktokre
 
-#print daterel
+def tokenize(str):
+    idx = 0
 
-TOK_created     = re.compile(r'(?P<op>created):(?P<v>%s)' % daterel, re.I | re.X)
-TOK_modified    = re.compile(r'(?P<op>modified):(?P<v>%s)' % daterel, re.I | re.X)
-TOK_uploaded    = re.compile(r'(?P<op>uploaded):(?P<v>%s)' % daterel, re.I | re.X)
+    print 'tokenizing (%s)' % str
+    while idx <= len(str):
+        m = tokre.match(str[idx:])
+        if m is None:
+            raise TokenException, 'Failed to match rest of "%s"' % str[idx:]
 
-TOK_id          = re.compile(r'(?P<v>\d+)')
+        idx += m.end()
 
-TOK_sub         = re.compile(r'(?P<v>/+)')
-TOK_and         = re.compile(r'(?P<v>[&+]+)')
-TOK_or          = re.compile(r'(?P<v>\|)')
-TOK_not         = re.compile(r'(?P<v>[-~])')
-TOK_lp          = re.compile(r'(?P<v>\()')
-TOK_rp          = re.compile(r'(?P<v>\))')
-TOK_comma       = re.compile(r'(?P<v>,+)')
+        tid, = [ t[0] for t in enumerate(m.groups()) if t[1] is not None ]
+        yield (tokens[tid], m.groups()[tid])
 
-TOK_eof         = re.compile(r'(?P<v>)$')
+def expect(want, tok, next):
+    if tok[0] != want:
+        raise ParseException, 'Expected tok "%s", got "%s:%s"' % (want, tok[0], tok[1])
+    v = tok[1]
+    tok = next()
+    return v,tok
 
-# Order of tokens matters; need to put predicate: entries first
-# so that tags don't get confused
-tokens = [ TOK_owner, TOK_vis, TOK_camera, TOK_photog,
-           TOK_created, TOK_modified, TOK_uploaded,
-           TOK_reserved,
-           TOK_tag, TOK_qualtag, TOK_id,
-           TOK_sub, TOK_and, TOK_or, TOK_not,
-           TOK_lp, TOK_rp, TOK_comma,
-           TOK_eof ]
+def parse(query, tok, next):
+    """
+    Grammar:
 
-class ParserException(Exception):
+    search := notExpr ('/' notExpr)*
+
+    notExpr := '-'? orExpr
+
+    orExpr := termExpr ('|' termExpr)*
+
+    term := ident ':' predicate
+         | number
+         | ident
+         | (':' ident)+ *?
+         | '(' orExpr ')'
+
+    predicate := dateexpr
+              | ('public' | 'private' | 'restricted')
+              | username
+
+    dateexpr := ('<' | '<=' | '=' | '>=' | '>')? daterange
+
+    daterange := period? datetime (',' datetime)
+
+    period := ('day' | 'week' | 'month' | 'year') ':'
+
+    datetime := date time?
+             | 'now'
+             | 'today'
+
+    date := number ('-' number ('-' number)?)?
+    time := number ':' number (':' number)
+
+    """
+
+    query, tok = parse_notExpr(query, tok, next)
+
+    while tok[0] == '/':
+        tok = next()
+        query, tok = parse_notExpr(query, tok, next)
+
+    return query
+
+def parse_notExpr(query, tok, next):
+    if tok[0] == '-':
+        print '- found'
+        tok = next()
+        if tok[0] == '/':
+            # Ignore -/-/ sequences
+            print '-/ found'
+            return query,tok
+        q,tok = parse_orExpr(tok, next)
+        if tok[0] == 'eof':
+            return query,tok
+        query = query.exclude(q)
+    else:
+        q, tok = parse_orExpr(tok, next)
+        query = query.filter(q)
+
+    return query,tok
+
+def parse_orExpr(tok, next):
+    q,tok = parse_term(tok, next)
+
+    while tok[0] == '|':
+        tok = next()
+        tq, tok = parse_term(tok, next)
+        q = q | tq
+
+    return q,tok
+
+def parse_term(tok, next):
+    if tok[0] == '(':
+        tok = next()
+        q,tok = parse_orExpr(tok, next)
+        v,tok = expect(')', tok, next)
+        return q, tok
+    
+    elif tok[0] == 'number':
+        q = Q(id = int(tok[1]))
+        tok = next()
+        return q, tok
+    
+    elif tok[0] == ':':
+        tag = []
+        while tok[0] == ':':
+            tok = next()
+            v,tok = expect('ident', tok, next)
+            tag.append(v)
+
+        tag = Tag.tag(':'.join(tag))
+        if tok[0] == '*':
+            tok = next()
+            q = Q(tags__in = tag.more_specific())
+        else:
+            q = Q(tags = tag)
+        return (q, tok)
+    
+    elif tok[0] == 'ident':
+        t = tok[1]
+        tok = next()
+        if tok[0] == ':':
+            tok = next()
+            return parse_predicate(tok, next, t)
+        else:
+            return (Q(tags__word = t), tok)
+
+    elif tok[0] == 'eof':
+        return (Q(), tok)
+    
+    else:
+        raise ParseException, 'unexpected token %s: %s' % tok
+
+def parse_predicate(tok, next, pred):
+    from imagestore.picture import Picture
+    
+    if pred == 'vis':
+        if tok[0] != 'ident' or tok[1] not in ('public', 'private', 'restricted'):
+            raise ParseException, 'Unexpected visibility token %s:%s' % tok
+        q = Q(visibility = { 'public': Picture.PUBLIC,
+                             'restricted': Picture.RESTRICTED,
+                             'private': Picture.PRIVATE }[tok[1]])
+        tok = next()
+        return (q, tok)
+
+    elif pred == 'owner':
+        v,tok = expect('ident', tok, next)
+        q = Q(owner__username = v)
+        return (q,tok)
+
+    elif pred == 'photog':
+        v,tok = expect('ident', tok, next)
+        q = Q(photographer__username = v)
+        return (q,tok)
+
+    elif pred == 'camera':
+        v,tok = expect('ident', tok, next)
+        q = Q(camera__nickname = v)
+        return (q,tok)
+    
+    elif pred in ('created', 'updated', 'modified'):
+        dr,tok,rel = parse_dateexpr(tok, next)
+        q = Q({'%s_time__%s' % (pred, rel): dr.start })
+        return (q, tok)
+
+    else:
+        raise ParseException, 'unknown predicate: %s' % pred
+
+def parse_dateexpr(tok, next):
+    rel = 'eq'
+    rels = { '<=': 'lte',
+             '<': 'lt',
+             '=': 'eq',
+             '>': 'gt',
+             '>=': 'gte' }
+    if tok[0] in rels:
+        rel = rels[tok[0]]
+        tok = next()
+
+    dr,tok = parse_daterange(tok, next)
+
+    return dr,tok,rel
+
+def parse_daterange(tok, next):
+    period=None
+    if tok[0] == 'ident' and tok[1] in ('day', 'week', 'month', 'year'):
+        period = tok[1]
+        tok = next()
+        v,tok = expect(':', tok, next)
+        
+    start,tok = parse_datetime(tok, next)
+    end = None
+    if tok[0] == ',':
+        tok = next()
+        end,tok = parse_datetime(tok, next)
+
+    if period:
+        start = rounddown(period, start)
+        end = roundup(period, end or start)
+
+    return daterange(start, end, period), tok
+
+def parse_datetime(tok, next):
+    if tok[0] == 'ident' and tok[1] in ('today', 'now'):
+        dr = daterange(tok[1])
+        tok = next()
+        return (dr, tok)
+    
+    d,period,tok = parse_date(tok, next)
+
+    t = dt.time(0,0,0)
+    if tok[0] == 'ident' and tok[1] == 't':
+        tok = next()
+        t,tok = parse_time(tok, next)
+
+    return daterange(start=dt.datetime.combine(d,t), period=period), tok
+
+def parse_date(tok, next):
+    year = None
+    month = 1
+    day = 1
+
+    v,tok = expect('number', tok, next)
+    year = int(v)
+    period = 'year'
+    
+    if tok[0] == '-':
+        tok = next()
+        v,tok = expect('number', tok, next)
+        month = int(v)
+        period = 'month'
+        if tok[0] == '-':
+            tok = next()
+            v,tok = expect('number', tok, next)
+            day = int(v)
+            period = 'day'
+
+    print 'period=%s' % period
+    return (dt.date(year, month, day), period, tok)
+
+def parse_time(tok, next):
+    sec = 0
+
+    v,tok = expect('number', tok, next)
+    hour = int(v)
+
+    v,tok = expect(':', tok, next)
+    v,tok = expect('number', tok, next)
+    min = int(v)
+
+    if tok[0] == ':':
+        tok = next()
+        v,tok = expect('number', tok, next)
+        sec = int(v)
+
+    return dt.time(hour, min, sec), tok
+
+class ParseException(Exception):
     pass
 
-class TokenException(ParserException):
+class TokenException(ParseException):
     pass
 
 class SearchParser(object):
     __slots__ = [ 'search', 'query' ]
-    
+
     def __init__(self, search):
         self.search = search
-        self.query = self.parse()
 
-    def parse(self):
-        """
-        Grammar for searches
-        
-        expr	: subExpr
-                ;
+    def parse(self, query):
+        toks = tokenize(self.search)
 
-        -- subsearches are separated by '/'; equivalent to & with
-        -- weak precedence; can't be grouped with ()
-        subExpr : catExpr ( '/' catExpr )*
-                ;
-
-        -- space-separated concatenated terms are anded together with
-        -- weak precedence; can be grouped with ()
-        catExpr : orExpr ( ','? orExpr )*
-                ;
-
-        -- Terms can be ORed together with |
-        orExpr	: andExpr ( OR andExpr )*
-                ;
-
-        -- Strong precedence AND operator
-        andExpr	: notExpr ( AND notExpr )*
-                ;
-
-        -- Tight-binding negation
-        notExpr : ('-' | '~') term
-                | term
-                ;
-
-        term	: '(' catExpr ')'       -- grouping
-                | TAG                   -- match tag
-                | QUALTAG               -- match qualified tag
-                | ID                    -- match picture id
-                | VIS                   -- match visibility
-                | OWNER                 -- match owner
-                | PHOTOG                -- match photographer
-                | CAMERA                -- match camera
-                ;
-
-        ID      := '[0-9]+'
-        SEP     := '/'+
-        AND     := ('+' | '&')+
-        OR      := '|'+
-
-        OWNER   := 'owner:' user
-        PHOTOG  := 'photog:' user
-        CAMERA  := 'camera:' cameranick
-        VIS     := 'vis:' ('public' | 'restricted' | 'private')
-
-        TODO: time/date range
-        
-        Tags can take several forms:
-                foo             simple tag
-                foo bar         tag with spaces
-                :foo:bar        qualified tag
-                :foo:bar blat   qualified tag with spaces
-        """
-
-        # token lookahead
-        lookahead=[]
-
-        def tok_consume():
-            " Consume a token from the input string "
-            self.search = self.search.lstrip()
-            for t in tokens:
-                m = t.match(self.search)
-                if m is not None:
-                    self.search = self.search[m.end():]
-                    return (t, m.group('v'), m.groupdict())
-
-            raise TokenException('failed to match token with remains "%s"' % self.search)
-
-        def tok_next(expect = None):
-            " Return the next token "
-
-            #print 'getting next tok from %s "%s"; expect %s' % (lookahead, self.search, expect)
-            
-            if lookahead:
-                ret = lookahead.pop(0)
-            else:
-                ret = tok_consume()
-
-            if expect is not None and expect is not ret[0]:
-                raise ParserException('unexpected token: wanted %s, got %s', expect, ret[0])
-            
-            #print 'returning token %s %s' % ret
-
-            return ret
-        
-        def tok_LA(x):
-            " Return a lookahead token "
-            while len(lookahead) < x:
-                lookahead.append(tok_consume())
-
-            ret = lookahead[x-1]
-            #print 'LA(%s) returning %s "%s", remains:"%s"' % (x, ret[0], ret[1], self.search)
-            return ret
-
-        def parse_expr():
-            return parse_subExpr()
-
-        def parse_subExpr():
-            q = parse_catExpr()
-
-            while tok_LA(1)[0] is TOK_sub:
-                tok_next(TOK_sub)
-                q = q & parse_catExpr()
-
-            return q
-
-        def parse_catExpr():
-            q = parse_orExpr()
-
-            while tok_LA(1)[0] in (TOK_owner, TOK_vis, TOK_camera, TOK_photog,
-                                   TOK_created, TOK_modified, TOK_uploaded,
-                                   TOK_tag, TOK_qualtag, TOK_id, TOK_lp,
-                                   TOK_comma):
-                if tok_LA(1)[0] is TOK_comma:
-                    tok_next(TOK_comma)
-                q = q & parse_orExpr()
-
-            return q
-
-        def parse_orExpr():
-            q = parse_andExpr()
-
-            while tok_LA(1)[0] is TOK_or:
-                tok_next(TOK_or)
-                q = q | parse_andExpr()
-
-            return q
-
-        def parse_andExpr():
-            q = parse_notExpr()
-
-            while tok_LA(1)[0] is TOK_and:
-                tok_next(TOK_and)
-                q = q & parse_notExpr()
-
-            return q
-
-        def parse_notExpr():
-            if tok_LA(1)[0] is TOK_not:
-                tok_next(TOK_not)
-                q = QNot(parse_term())
-            else:
-                q = parse_term()
-            return q
-
-        def parse_term():
-            tok,val,match = tok_LA(1)
-
-            if tok is TOK_lp:
-                tok_next(TOK_lp)
-                q = parse_catExpr()
-                tok_next(TOK_rp)
-
-            elif tok is TOK_owner:
-                tok_next(tok)
-                q = Q(owner__username = val)
-
-            elif tok is TOK_photog:
-                tok_next(tok)
-                q = Q(photographer__username = val)
-
-            elif tok is TOK_vis:
-                tok_next(tok)
-                val = val.lower()
-                q = Q(visibility = { 'public': Picture.PUBLIC,
-                                     'restricted': Picture.RESTRICTED,
-                                     'private': Picture.PRIVATE }[val])
-
-            elif tok is TOK_camera:
-                tok_next(tok)
-                q = Q(camera__nickname = val)
-
-            # XXX TODO: search camera tags too
-            # q = q | Q(camera__cameratags__tags__word = 'foo')
-            # .extra(where=['imagestore_picture.created_time BETWEEN imagestore_picture__camera__cameratags.start AND imagestore_picture__camera__cameratags.end'])
-            elif tok is TOK_tag:
-                tok_next(tok)
-                q = Q(tags__word = val)
-
-            elif tok is TOK_qualtag:
-                tok_next(tok)
-                
-                if val[-1] == '*':
-                    val = val[:-1]
-                    q = Q(tags__in = Tag.tag(val).more_specific())
-                else:
-                    q = Q(tags = Tag.tag(val))
-
-            elif tok is TOK_id:
-                tok_next(tok)
-                q = Q(id = int(val))
-
-            elif tok in (TOK_created, TOK_modified, TOK_uploaded):
-                tok_next(tok)
-                q = handle_datetime(match)
-
-            elif tok is TOK_eof:
-                tok_next(tok)
-                q = Q()
-
-            elif tok is TOK_reserved:
-                raise ParserException('reserved predicate "%s" used: '
-                                'did you mean to use a :qualified:tag?' % val)
-
-            else:
-                print 'tok=%s lp=%s rp=%s' % (tok, TOK_lp, TOK_rp)
-                raise ParserException('unexpected token "%s" (%s), next %s, search=\"%s\"' % (tok, val, tok_LA(1)[0], self.search))
-
-            return q
-
-        def handle_datetime(groups):
-            def parse_date(d):
-                pieces = [ ('%Y', 'year'), ('-%m', 'month'), ('-%d', 'day'),
-                           ('T%H:%M', None), (':%S', None) ]
-                if d in ('today', 'now'):
-                    return daterange(d)
-                if d is None:
-                    return None
-                
-                ret = None
-                fmt = ''
-
-                for p, period in pieces:
-                    fmt += p
-                    try:
-                        time=dt.datetime.strptime(d, fmt)
-                        if period is not None:
-                            return daterange(time, period=period)
-                        else:
-                            return daterange(time, time)
-                    except ValueError:
-                        continue
-
-                print 'failed to parse "%s"' % d
-                return None
-            
-            print 'groups=%s' % (groups)
-
-            start = parse_date(groups.get('start'))
-            end = parse_date(groups.get('end'))
-            date = parse_date(groups.get('date'))
-            period = groups.get('period')
-            per_date = parse_date(groups.get('per_date'))
-
-            dr = None
-            if start and end:
-                dr = daterange(start.start, end.start)
-            elif date:
-                dr = date
-            elif per_date and period:
-                dr = daterange(start=per_date.start, period=period)
-
-            if dr is None:
-                return Q()      # bad date range?
-
-            print 'daterange=%s' % dr
-            
-            field = '%s_time' % groups.get('op')
-            arg = (dr.start, dr.end)
-            cmp = 'range'
-            
-            rel = groups.get('rel')
-            if rel == '<':
-                arg = dr.start
-                cmp = 'lt'
-            elif rel == '<=':
-                arg = dr.end
-                cmp = 'lt'
-            elif rel == '>':
-                arg = dr.end
-                cmp = 'gte'
-            elif rel == '>=':
-                arg = dr.start
-                cmp = 'gte'
-                
-            return Q(**{'%s__%s'%(field, cmp): arg})
-        
-        return parse_expr()
+        def next():
+            t = toks.next()
+            print 'next: %s:%s' % t
+            return t
+        return parse(query, next(), next)
