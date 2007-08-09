@@ -1,9 +1,11 @@
+from __future__ import absolute_import
+
 import json
 import sha
 
-from imagestore.rest import RestBase
+from .rest import RestBase
 
-from namespace import html, xhtml
+from .namespace import html, xhtml
 
 class Entry(RestBase):
     def __init__(self):

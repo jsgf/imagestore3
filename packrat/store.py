@@ -3,8 +3,10 @@ from __future__ import absolute_import
 import sha, md5
 from os import makedirs
 import cPickle as pickle
+
 from django.db import models
-from imagestore.media import Media
+
+from .media import Media
 
 class ContentStore(object):
     """ Base class for a generic content store """

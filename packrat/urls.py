@@ -3,8 +3,8 @@ from django.db.models import permalink
 from django.http import HttpResponse
 from django.conf.urls.defaults import patterns, include
 
-from imagestore.namespace import xhtml
-from imagestore import restlist
+from .namespace import xhtml
+from . import restlist
 
 class Index(restlist.Entry):
     def _render_html(self, ns):
@@ -17,17 +17,17 @@ class Index(restlist.Entry):
 
 @permalink
 def base_url():
-    return ('imagestore.urls.index', (), {})
+    return ('packrat.urls.index', (), {})
 
 index = Index()
 
 # Order matters here, so that we get the reverse lookup correct
 urlpatterns = patterns('',
-            ('^$',                      'imagestore.urls.index'),
-            #('ui/',                    include('imagestore.ui')),
-            ('^camera/$',               'imagestore.camera.cameralist'),
-            ('^image/',                 include('imagestore.picture')),
-            ('^user/',                  include('imagestore.user')),
-            ('^tag/',                   include('imagestore.tag')),
-#            ('^test/$',         'imagestore.rest.test'),
+            ('^$',                      'packrat.urls.index'),
+            #('ui/',                    include('packrat.ui')),
+            ('^camera/$',               'packrat.camera.cameralist'),
+            ('^image/',                 include('packrat.picture')),
+            ('^user/',                  include('packrat.user')),
+            ('^tag/',                   include('packrat.tag')),
+#            ('^test/$',         'packrat.rest.test'),
 )

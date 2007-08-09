@@ -1,11 +1,13 @@
+from __future__ import absolute_import
+
 import re
 
 import datetime as dt
 
 from django.db.models.query import Q, QNot
 
-from imagestore.tag import Tag
-from imagestore.daterange import daterange
+from .tag import Tag
+from .daterange import daterange
 
 __all__ = [ 'SearchParser' ]
 
@@ -186,7 +188,7 @@ def parse_term(tok, next):
         raise ParseException, 'unexpected token %s: %s' % tok
 
 def parse_predicate(tok, next, pred):
-    from imagestore.picture import Picture
+    from .picture import Picture
     
     if pred == 'vis':
         if tok[0] != 'ident' or tok[1] not in ('public', 'private', 'restricted'):

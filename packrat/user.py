@@ -6,9 +6,8 @@ from django.db import models
 from django.db.models import permalink
 from django.http import HttpResponse
 
-from imagestore import urn, restlist
-from imagestore.namespace import xhtml
-import imagestore.microformat as microformat
+from . import restlist, microformat
+from .namespace import xhtml
 
 class UserProfile(models.Model):
     user = models.ForeignKey(User, unique=True, core=True, related_name='profile',
@@ -22,7 +21,7 @@ class UserProfile(models.Model):
     
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.user.user', (self.user.username,))
+        return ('packrat.user.user', (self.user.username,))
 
     def get_image_url(self):
         return self.get_absolute_url() + 'image/'
@@ -34,7 +33,7 @@ class UserProfile(models.Model):
         return self.get_absolute_url() + 'camera/'
 
     def get_urn(self):
-        return 'urn:user:%d' % self.id
+        return self.get_absolute_url()
 
 def get_url_user(kwargs):
     id = kwargs.get('user', None)
@@ -102,19 +101,16 @@ class UserEntry(restlist.Entry):
     def get_absolute_url(self):
         return self.urluser.get_profile().get_absolute_url()
     
-urn.register('user',
-             lambda urn: User.objects.get(id=int(urn[0])).get_profile())
-
 userlist = UserList()
 user = UserEntry()
 
 urlpatterns = patterns('',
                        ('^$',                           userlist),
                        ('^(?P<user>[^/]+)/$',           user),
-                       ('^(?P<user>[^/]+)/image/',      include('imagestore.picture')),
-                       ('^(?P<user>[^/]+)/camera/',     include('imagestore.camera')),
-                       ('^(?P<user>[^/]+)/tag/$',       'imagestore.tag.usertaglist'),
-                       ('^(?P<user>[^/]+)/tag/(?P<tagpart>[a-zA-Z0-9_ -]+)/$',       'imagestore.tag.usertagcomplete'),
+                       ('^(?P<user>[^/]+)/image/',      include('packrat.picture')),
+                       ('^(?P<user>[^/]+)/camera/',     include('packrat.camera')),
+                       ('^(?P<user>[^/]+)/tag/$',       'packrat.tag.usertaglist'),
+                       ('^(?P<user>[^/]+)/tag/(?P<tagpart>[a-zA-Z0-9_ -]+)/$',       'packrat.tag.usertagcomplete'),
                        )
 
 def setup():

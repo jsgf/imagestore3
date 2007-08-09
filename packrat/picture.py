@@ -17,18 +17,18 @@ from django import newforms as forms
 
 from ElementBuilder import Namespace, ElementTree
 
-from imagestore.media import Media
-from imagestore.tag import Tag
-from imagestore.rest import (RestBase, HttpResponseBadRequest,
-                             HttpResponseConflict, HttpResponseBadRequest,
-                             HttpResponseContinue, HttpResponseExpectationFailed,
-                             serialize_xml)
-from imagestore import urn, EXIF, image, microformat, restlist
+from .media import Media
+from .tag import Tag
+from .rest import (RestBase, HttpResponseBadRequest,
+                   HttpResponseConflict, HttpResponseBadRequest,
+                   HttpResponseContinue, HttpResponseExpectationFailed,
+                   serialize_xml)
+from . import EXIF, image, microformat, restlist
 
-from imagestore.atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
-from imagestore.namespace import atom, imst, html, xhtml, opensearch, timeline
-from imagestore.daterange import daterange
-from imagestore.search import SearchParser
+from .atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
+from .namespace import atom, imst, html, xhtml, opensearch, timeline
+from .daterange import daterange
+from .search import SearchParser
 
 __all__ = [ 'Picture' ]
 
@@ -172,7 +172,7 @@ class Picture(models.Model):
 
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.picture.picture', str(self.id), { 'picid': str(self.id) })
+        return ('packrat.picture.picture', str(self.id), { 'picid': str(self.id) })
 
     def get_picture_url(self, size='thumb'):
         try:
@@ -356,7 +356,7 @@ class PictureEntry(AtomEntry):
         return self.picture.get_title()
 
     def urlparams(self, kwargs):
-        from imagestore.user import get_url_user
+        from .user import get_url_user
         
         self.picture = get_url_picture(self.authuser, kwargs)
         self.urluser = get_url_user(kwargs)
@@ -681,11 +681,11 @@ class PictureFeed(AtomFeed):
     @permalink
     def get_absolute_url(self):
         if self.search:
-            return ('imagestore.picture.picturesearch',
+            return ('packrat.picture.picturesearch',
                     [ self.urluser, self.search ],
                     { 'search': self.search, 'urluser': self.urluser })
         else:
-            return ('imagestore.picture.picturefeed',
+            return ('packrat.picture.picturefeed',
                     [ self.urluser ],
                     { 'urluser': self.urluser })
 
@@ -697,7 +697,7 @@ class PictureFeed(AtomFeed):
         
 
     def urlparams(self, kwargs):
-        from imagestore.user import get_url_user
+        from .user import get_url_user
 
         self.urluser = get_url_user(kwargs)
         self.search = kwargs.get('search', '')
@@ -882,7 +882,7 @@ class PictureFeed(AtomFeed):
 class DerivedPictureFeed(PictureFeed):
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.picture.picturederived',
+        return ('packrat.picture.picturederived',
                 [ self.basepic.id, self.search ],
                 { 'picid': self.basepic.id, 'search': self.search })
 
@@ -923,7 +923,7 @@ class CommentFeed(AtomFeed):
 
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.picture.commentfeed',
+        return ('packrat.picture.commentfeed',
                 (str(self.picture.id), ),
                 { 'picid': str(self.picture.id) })
 

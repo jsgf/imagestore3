@@ -2,9 +2,9 @@ from __future__ import absolute_import
 
 from datetime import datetime
 
-from imagestore.atomfeed import atomtime
-from imagestore.namespace import xhtml
-import imagestore.EXIF as EXIF
+from .atomfeed import atomtime
+from .namespace import xhtml
+from . import EXIF
 
 def html_datetime(dt):
     return xhtml.dfn({ 'class': 'dtbegin', 'title': atomtime(dt) }, str(dt))

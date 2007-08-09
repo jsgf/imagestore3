@@ -5,5 +5,5 @@ urlpatterns = patterns('',
 
      (r'^admin/', include('django.contrib.admin.urls')),
 
-     (r'^imagestore/', include('imagestore.urls')),
+     (r'^packrat/', include('packrat.urls')),
 )

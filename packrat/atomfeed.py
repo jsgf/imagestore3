@@ -3,10 +3,10 @@ from __future__ import absolute_import
 from django.http import HttpRequest, HttpResponse
 
 import ElementBuilder
-from imagestore.rest import RestBase
-from imagestore.namespace import atom, xhtml
+from .rest import RestBase
+from .namespace import atom, xhtml
 
-from imagestore import restlist
+from . import restlist
 
 class AtomFeed(restlist.List):
     __slots__ = [ 'title', 'subtitle', 'uri' ]

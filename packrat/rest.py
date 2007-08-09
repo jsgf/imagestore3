@@ -13,7 +13,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from ElementBuilder import ElementTree
-from imagestore.namespace import html
+from .namespace import html
 
 __all__ = [ 'RestBase', 'HttpResponseBadRequest', 'HttpResponseConflict',
             'HttpResponseContinue', ]

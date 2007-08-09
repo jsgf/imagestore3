@@ -1,4 +1,4 @@
-# Django settings for imagestore project.
+# Django settings for packrat project.
 
 DEBUG = True
 TEMPLATE_DEBUG = DEBUG
@@ -10,7 +10,7 @@ ADMINS = (
 MANAGERS = ADMINS
 
 DATABASE_ENGINE = 'mysql'           # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'ado_mssql'.
-DATABASE_NAME = 'im3'             # Or path to database file if using sqlite3.
+DATABASE_NAME = 'packrat'           # Or path to database file if using sqlite3.
 DATABASE_USER = 'im3'             # Not used with sqlite3.
 DATABASE_PASSWORD = ''         # Not used with sqlite3.
 DATABASE_HOST = ''             # Set to empty string for localhost. Not used with sqlite3.
@@ -73,12 +73,12 @@ TEMPLATE_DIRS = (
     # Don't forget to use absolute paths, not relative paths.
 )
 
-AUTH_PROFILE_MODULE='imagestore.UserProfile'
+AUTH_PROFILE_MODULE='packrat.UserProfile'
 INSTALLED_APPS = (
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.sites',
-    'imagestore',
+    'packrat',
 )

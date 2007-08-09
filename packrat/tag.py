@@ -1,13 +1,14 @@
 from __future__ import absolute_import
 
+import string, re
+
 from django.db import models
 from django.db.models import permalink, Q
 from django.conf.urls.defaults import patterns, include
 
-import string, re
-from imagestore.namespace import xhtml
-from imagestore import restlist
-from imagestore.urls import base_url
+from .namespace import xhtml
+from . import restlist
+from .urls import base_url
 
 tagroot = None
 
@@ -180,7 +181,7 @@ class TagEntry(restlist.Entry):
                 self.tag.description or '')
 
     def _render_html(self, ns):
-        from imagestore.picture import picturefeed, Picture
+        from .picture import picturefeed, Picture
         t = self.tag
 
         ms = t.more_specific()
@@ -201,7 +202,7 @@ class TagEntry(restlist.Entry):
     
 class TagList(restlist.List):
     def urlparams(self, kwargs):
-        from imagestore.user import get_url_user
+        from .user import get_url_user
 
         self.urluser = get_url_user(kwargs)
 
@@ -214,7 +215,7 @@ class TagList(restlist.List):
 
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.tag.taglist', (), {})
+        return ('packrat.tag.taglist', (), {})
 
     def filter(self):
         if self.urluser:
@@ -226,7 +227,7 @@ class TagList(restlist.List):
         """ Generate a list of all tags.  Tags are only considered to
         exist if there's a visible picture visible to the current user
         tagged with that tag."""
-        from imagestore.picture import Picture
+        from .picture import Picture
 
         to = Tag.objects.distinct().filter(self.filter())
 
@@ -241,19 +242,20 @@ class TagList(restlist.List):
         # to.filter(picture__visibility = Picture.RESTRICTED,
         #           picture__owner__friends__user = self.authuser)
         # but this doesn't seem to work
-        result |= set(to.extra(where=['imagestore_tag.id = imagestore_picture_tags.tag_id',
-                                      'imagestore_picture_tags.picture_id = imagestore_picture.id',
-                                      'imagestore_picture.visibility=%s',
-                                      'imagestore_picture.owner_id = auth_user.id',
-                                      'auth_user.id = imagestore_userprofile.user_id',
-                                      'imagestore_userprofile.id = imagestore_userprofile_friends.userprofile_id',
-                                      'imagestore_userprofile_friends.user_id=%s'],
-                               tables=['imagestore_picture_tags',
-                                       'imagestore_picture',
-                                       'auth_user',
-                                       'imagestore_userprofile',
-                                       'imagestore_userprofile_friends'],
-                               params=[Picture.RESTRICTED, self.authuser.id]))
+        if self.authuser:
+            result |= set(to.extra(where=['packrat_tag.id = packrat_picture_tags.tag_id',
+                                          'packrat_picture_tags.picture_id = packrat_picture.id',
+                                          'packrat_picture.visibility=%s',
+                                          'packrat_picture.owner_id = auth_user.id',
+                                          'auth_user.id = packrat_userprofile.user_id',
+                                          'packrat_userprofile.id = packrat_userprofile_friends.userprofile_id',
+                                          'packrat_userprofile_friends.user_id=%s'],
+                                   tables=['packrat_picture_tags',
+                                           'packrat_picture',
+                                           'auth_user',
+                                           'packrat_userprofile',
+                                           'packrat_userprofile_friends'],
+                                   params=[Picture.RESTRICTED, self.authuser.id]))
 
         # Picture's camera tags
         result |= set(to.filter(cameratags__camera__picture__visibility = Picture.PUBLIC))
@@ -264,23 +266,24 @@ class TagList(restlist.List):
         # to.filter(cameratags__camera__picture__visibility = Picture.RESTRICTED,
         #           cameratags__camera__picture__owner__friends__user = self.authuser)
         # but...
-        result |= set(to.extra(where=['imagestore_tag.id = imagestore_cameratags_tags.tag_id',
-                                      'imagestore_cameratags_tags.cameratags_id = imagestore_cameratags.id',
-                                      'imagestore_cameratags.camera_id = imagestore_camera.id',
-                                      'imagestore_camera.id = imagestore_picture.camera_id',
-                                      'imagestore_picture.visibility = %s',
-                                      'imagestore_picture.owner_id = auth_user.id',
-                                      'auth_user.id = imagestore_userprofile.user_id',
-                                      'imagestore_userprofile.id = imagestore_userprofile_friends.userprofile_id',
-                                      'imagestore_userprofile_friends.user_id = %s' ],
-                               tables=['imagestore_cameratags_tags',
-                                       'imagestore_cameratags',
-                                       'imagestore_camera',
-                                       'imagestore_picture',
-                                       'auth_user',
-                                       'imagestore_userprofile',
-                                       'imagestore_userprofile_friends' ],
-                               params=[Picture.RESTRICTED, self.authuser.id]))
+        if self.authuser:
+            result |= set(to.extra(where=['packrat_tag.id = packrat_cameratags_tags.tag_id',
+                                          'packrat_cameratags_tags.cameratags_id = packrat_cameratags.id',
+                                          'packrat_cameratags.camera_id = packrat_camera.id',
+                                          'packrat_camera.id = packrat_picture.camera_id',
+                                          'packrat_picture.visibility = %s',
+                                          'packrat_picture.owner_id = auth_user.id',
+                                          'auth_user.id = packrat_userprofile.user_id',
+                                          'packrat_userprofile.id = packrat_userprofile_friends.userprofile_id',
+                                          'packrat_userprofile_friends.user_id = %s' ],
+                                   tables=['packrat_cameratags_tags',
+                                           'packrat_cameratags',
+                                           'packrat_camera',
+                                           'packrat_picture',
+                                           'auth_user',
+                                           'packrat_userprofile',
+                                           'packrat_userprofile_friends' ],
+                                   params=[Picture.RESTRICTED, self.authuser.id]))
         
         result = list(result)
         result.sort(lambda a,b: cmp(a.canonical(), b.canonical()))

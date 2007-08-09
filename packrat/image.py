@@ -7,9 +7,9 @@ from datetime import datetime
 import cStringIO as StringIO
 import Image as PIL
 
-import imagestore.EXIF as EXIF
-import imagestore.camera
-from imagestore.media import Media
+from . import EXIF
+from .camera import get_camera
+from .media import Media
 
 ########################################
 # Config - XXX use std config
@@ -147,7 +147,7 @@ class StillImage(Image):
             if not short:
                 'Copyright '+copyright
 
-        brand = 'Imagestore '
+        brand = 'PackRat '
         fontsz = fontsize
         
         if short:
@@ -264,7 +264,7 @@ def still_image_importer(file, mimetype, owner, visibility, camera = None,
     width,height = img.size
 
     if camera is None:
-        camera = imagestore.camera.get_camera(owner, exif)
+        camera = get_camera(owner, exif)
 
     if created_time is None:
         created_time = datetime.now()

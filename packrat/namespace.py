@@ -5,7 +5,7 @@ from ElementBuilder import Namespace
 atom = Namespace('http://www.w3.org/2005/Atom', 'atom')
 app = Namespace('http://www.w3.org/2007/app', 'app')
 
-imst = Namespace('http://www.goop.org/imagestore/schema/imagestore/', 'imst')
+imst = Namespace('http://www.goop.org/packrat/schema/imagestore/', 'imst')
 xhtml = Namespace('http://www.w3.org/1999/xhtml', 'xh')
 opensearch = Namespace('http://a9.com/-/spec/opensearch/1.1/', 'os')
 html = Namespace()                      # tag soup

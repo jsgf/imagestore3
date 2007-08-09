@@ -10,12 +10,12 @@ from django.db.models import permalink
 from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 
-from imagestore import microformat, restlist
-from imagestore.tag import Tag
-from imagestore.namespace import xhtml, html, timeline
-from imagestore.user import get_url_user
-from imagestore.daterange import daterange
-from imagestore.rest import RestBase, serialize_xml
+from . import microformat, restlist
+from .tag import Tag
+from .namespace import xhtml, html, timeline
+from .user import get_url_user
+from .daterange import daterange
+from .rest import RestBase, serialize_xml
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -30,7 +30,7 @@ class Camera(models.Model):
 
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.camera.camera',
+        return ('packrat.camera.camera',
                 (self.owner.username, self.nickname),
                 { 'camnick': self.nickname, 'user': self.owner.username })
 
@@ -233,7 +233,7 @@ class CameraTags(models.Model):
 
     @permalink
     def get_absolute_url(self):
-        return ('imagestore.camera.cameratag',
+        return ('packrat.camera.cameratag',
                 (self.camera.owner.username, self.camera.nickname, self.id),
                 { 'user': self.camera.owner.username,
                   'camnick': self.camera.nickname,
