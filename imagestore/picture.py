@@ -8,11 +8,12 @@ import datetime as dt
 
 from django.db import models
 from django.db.models import permalink, Q
-from django.http import (HttpRequest, HttpResponse,
-                         HttpResponseForbidden, HttpResponseNotFound, Http404)
+from django.http import (HttpRequest, HttpResponse, HttpResponseRedirect,
+                         HttpResponseForbidden, HttpResponseNotFound)
 from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 from django.core.exceptions import ObjectDoesNotExist
+from django import newforms as forms
 
 from ElementBuilder import Namespace, ElementTree
 
@@ -32,8 +33,7 @@ from imagestore.search import SearchParser
 __all__ = [ 'Picture' ]
 
 class FilteredPictures(models.Manager):
-    @staticmethod
-    def visibility_filter(user):
+    def visibility_filter(self, user):
         """ Returns a filter to limit the pictures visible
             to a particular authenticated user """
         vis = Q(visibility=Picture.PUBLIC)
@@ -46,13 +46,13 @@ class FilteredPictures(models.Manager):
                 vis = vis | (Q(visibility=Picture.RESTRICTED, owner__in=up.friends) |
                              Q(visibility=Picture.PRIVATE, owner=user))
 
-        return vis
+        return self.filter(vis)
 
     def vis_filter(self, authuser, *args, **kwargs):
-        return self.filter(self.visibility_filter(authuser), *args, **kwargs)
+        return self.visibility_filter(authuser).filter(*args, **kwargs)
 
     def vis_get(self, authuser, *args, **kwargs):
-        return self.get(self.visibility_filter(authuser), *args, **kwargs)
+        return self.visibility_filter(authuser).get(*args, **kwargs)
 
 class NotDeletedPictures(FilteredPictures):
     def get_query_set(self):
@@ -77,7 +77,7 @@ class Picture(models.Model):
     all_objects = FilteredPictures()
 
     @staticmethod
-    def get(user, id):
+    def getpic(user, id):
         return Picture.objects.vis_get(user, id=id)
 
     sha1hash = models.CharField("unique sha1 hash of picture",
@@ -88,11 +88,14 @@ class Picture(models.Model):
                                maxlength=32, db_index=True, unique=True, editable=False)
     datasize = models.PositiveIntegerField("raw picture size in bytes", editable=False)
 
-    derived_from = models.ForeignKey('self', null=True, related_name='derivatives')
+    derived_from = models.ForeignKey('self', null=True, blank=True, related_name='derivatives')
 
     width = models.PositiveIntegerField(editable=False)
     height = models.PositiveIntegerField(editable=False)
-    orientation = models.PositiveIntegerField()
+    orientation = models.PositiveIntegerField(choices=((0, "0"),
+                                                       (90, "90"),
+                                                       (180, "180"),
+                                                       (270, "270")))
 
     created_time = models.DateTimeField("time picture was taken", db_index=True)
     uploaded_time = models.DateTimeField("time picture was uploaded",
@@ -115,7 +118,7 @@ class Picture(models.Model):
                                                            (RESTRICTED, 'Restricted'),
                                                            (PRIVATE, 'Private')),
                                                   radio_admin=True)
-    photographer = models.ForeignKey(User, null=True,
+    photographer = models.ForeignKey(User, null=True, blank=True,
                                      related_name='photographed_pics')
     title = models.CharField(maxlength=127, blank=True)
     description = models.TextField(blank=True)
@@ -260,50 +263,12 @@ class Picture(models.Model):
         for t in self.canon_tags(tags, create=False):
             self.tags.remove(t)
 
-    def edit_formspec(self, ns):
-        """ A form for editing a picture.  XXX there must be a way of
-        deriving this from the model more automatically; ideally using
-        some django code."""
-        vis = ns.select(name='visibility')
-        for v in (Picture.PUBLIC, Picture.RESTRICTED, Picture.PRIVATE):
-            r = ns.option(Picture.str_visibility(v), name='visibility', value=str(v))
-            if v == self.visibility:
-                r.attrib['selected'] = 'yes'
-            vis.append(r)
-
-        orient = ns.span()
-        for o in (0, 90, 180, 270):
-            r = ns.input(type='radio', name='orientation', value=str(o))
-            if o == self.orientation:
-                r.attrib['checked'] = 'yes'
-            orient.append(ns.label(str(o), r))
-            
-        inputs = [ ns.input(name='title', type='text', value=self.title),
-                   ns.input(name='tags', type='text',
-                            value=', '.join([ t.canonical() for t in self.tags.all() ])),
-                   ns.input(name='derived_from', type='text',
-                            value=(self.derived_from and
-                                   self.derived_from.get_absolute_url() or '')),
-                   ns.input(name='original_ref', type='text', value=self.original_ref),
-                   ns.input(name='deleted', type='checkbox', value=str(self.deleted)),
-                   ns.textarea(name='description', cols='60', rows='10', value=self.description),
-                   vis,
-                   orient,
-                   ns.input(type='submit'),
-                   ns.input(type='reset'),
-                   ]
-        
-        return ns.form({'method': 'post', 'action': self.get_absolute_url(),
-                        'enctype': 'multipart/form-data' },
-                       ns.ul(*[ ns.li('name' in e.attrib and ns.label(e.attrib['name'], e) or e)
-                                for e in inputs ]))
-
 def get_url_picture(authuser, kwargs):
     id = kwargs.get('picid', None)
     if id is None:
         return None
 
-    return Picture.get(authuser, int(id))
+    return Picture.getpic(authuser, int(id))
 
 def picture_upload(self, owner, **kwargs):
     request = self.request
@@ -474,8 +439,6 @@ class PictureEntry(AtomEntry):
                     ns.a({'href': self.append_url_params(p.get_comment_url())},
                          '%d comments' % p.comment_set.count()) ]
 
-        content.append(p.edit_formspec(ns))
-        
         return content
     
     def render_atom(self):
@@ -517,7 +480,56 @@ class PictureEntry(AtomEntry):
 
         return ret
 
-# Should this be just another format for picture?
+class PictureEdit(restlist.Entry):
+    
+    def urlparams(self, kwargs):
+        self.picture = get_url_picture(self.authuser, kwargs)
+
+    def form(self):
+        def formfield(f, **kwargs):
+            field = f.formfield(**kwargs)
+            if f.name in ('photographer'):
+                field.required = False
+
+            return field
+        
+        return forms.form_for_instance(self.picture)
+
+    def title(self, ns):
+        return 'Editing image #%d' % self.picture.id
+
+    def show_form(self, form):
+        file = StringIO()
+
+        errors = []
+        if form.is_bound and not form.is_valid():
+            errors = html.div({'class': 'errors'},
+                              html.h2('Errors'),
+                              '%(errors)s')
+            
+        serialize_xml(self._html_frame(html,
+                                       html.span(self.picture.render_img(ns=html, size='tiny'),
+                                                 errors,
+                                                 html.form(action='', method='POST'),
+                                                 html.ul('%(form)s'),
+                                                 html.input(type='submit'))), file)
+        
+        return HttpResponse(file.getvalue() % { 'form': form.as_ul(), 'errors': form.errors },
+                            mimetype=self.mimetype)        
+
+    def render_html(self):
+        return self.show_form(self.form()())
+
+    def do_POST(self, *args, **kwargs):
+        f = self.form()(self.request.POST)
+
+        if not f.is_valid():
+            return self.show_form(f)
+        
+        f.save()
+
+        return HttpResponseRedirect(self.picture.get_absolute_url())
+    
 class PictureExif(restlist.Entry):
     __slots__ = [ 'picture' ]
     
@@ -691,19 +703,16 @@ class PictureFeed(AtomFeed):
         self.search = kwargs.get('search', '')
         if self.search is not None:
             self.search = self.search.strip(' /+')
-            self.query = SearchParser(self.search).query
 
-    def filter(self):
-        filter = Q()
-        
+    def filter(self, query):
         if self.urluser is not None:
             print 'filtering user %s' % self.urluser.username
-            filter = filter & Q(owner = self.urluser)
+            query = query.filter(owner = self.urluser)
 
-        if self.query is not None:
-            filter = filter & self.query
+        if self.search:
+            query = SearchParser(self.search).parse(query)
 
-        return filter
+        return query
     
     def preamble(self, ns):
         """ Insert a little html form for as a guide for how to post
@@ -731,14 +740,14 @@ class PictureFeed(AtomFeed):
 
         return links + [form]
             
-
     def results(self, order=None):
         if self._query is None or order :
-            q = Picture.objects.vis_filter(self.authuser, self.filter())
-            q = q.distinct().select_related()
+            query = Picture.objects.vis_filter(self.authuser)
+            query = self.filter(query)
+            query = query.distinct()
             if order:
-                q = q.order_by(order)
-            self._query = q
+                query = query.order_by(order)
+            self._query = query
             
         return self._query
 
@@ -881,8 +890,8 @@ class DerivedPictureFeed(PictureFeed):
         super(DerivedPictureFeed,self).urlparams(kwargs)
         self.basepic = get_url_picture(self.authuser, kwargs)
 
-    def filter(self):
-        return super(DerivedPictureFeed, self).filter() & Q(derived_from = self.basepic)
+    def filter(self, query):
+        return super(DerivedPictureFeed, self).filter(query).filter(derived_from = self.basepic)
 
     def do_POST(self, *args, **kwargs):
         return picture_upload(self, owner=self.urluser, derived_from=self.basepic)
@@ -910,15 +919,34 @@ class CommentFeed(AtomFeed):
         self.picture = get_url_picture(self.authuser, kwargs)
 
     def entries(self, **kwargs):
-        return [ CommentEntry(c)
-                 for c in Comment.objects.filter(picture=self.picture) ]
+        return (CommentEntry(c) for c in self.picture.comment_set.all())
 
     @permalink
     def get_absolute_url(self):
         return ('imagestore.picture.commentfeed',
                 (str(self.picture.id), ),
                 { 'picid': str(self.picture.id) })
-                  
+
+    def form(self):
+        return forms.form_for_model(Comment)
+
+    def show_form(self, form):
+        file = StringIO()
+
+        errors = []
+        if form.is_bound() and not form.is_valid():
+            errors = html.div({'class': 'errors'},
+                              html.h2('Errors %d' % form.is_valid()),
+                              '%(errors)s')
+            
+        serialize_xml(self._html_frame(html,
+                                       html.span(errors,
+                                                 html.form(action='', method='POST'),
+                                                 html.ul('%(form)s'),
+                                                 html.input(type='submit'))), file)
+        
+        return HttpResponse(file.getvalue() % { 'form': form.as_ul(), 'errors': form.errors },
+                            mimetype=self.mimetype)        
 
 class CommentEntry(AtomEntry):
     def __init__(self, comment=None):
@@ -929,7 +957,9 @@ class CommentEntry(AtomEntry):
 # Make a pile of distinct names so that reverse URL lookups work
 picturefeed     = PictureFeed()
 picturesearch   = PictureFeed()
+
 picture         = PictureEntry()
+pictureedit     = PictureEdit()
 pictureexif     = PictureExif()
 picturesizelist = PictureSizeList()
 pictureimage    = PictureImage()
@@ -943,6 +973,7 @@ urlpatterns = \
            ('^-/(?P<search>.*)$',       picturesearch),
            
            ('(?P<picid>[0-9]+)/$',                                      picture),
+           ('(?P<picid>[0-9]+)/edit/$',                                 pictureedit),
            ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),
            ('(?P<picid>[0-9]+)/derived/(?:-/(?P<search>.*))?$',         picturederived),
            ('(?P<picid>[0-9]+)/pic/$',                                  picturesizelist),

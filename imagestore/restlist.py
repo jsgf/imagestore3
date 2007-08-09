@@ -6,6 +6,12 @@ from imagestore.rest import RestBase
 from namespace import html, xhtml
 
 class Entry(RestBase):
+    def __init__(self):
+        super(Entry,self).__init__()
+        if hasattr(self, '_render_html'):
+            self.__class__.render_html = Entry.__render_html
+            self.__class__.render_xhtml = Entry.__render_xhtml
+            
     def generate(self):
         """ Return a datastructure which can be rendered into any of the supported formats """
         yield
@@ -33,10 +39,10 @@ class Entry(RestBase):
         return ns.html(ns.head(links, ns.title(headtitle)),
                        ns.body(ns.h1(title), inner))
 
-    def render_html(self, *args, **kwargs):
+    def __render_html(self, *args, **kwargs):
         return self._html_frame(html, self._render_html(html, *args, **kwargs))
 
-    def render_xhtml(self, *args, **kwargs):
+    def __render_xhtml(self, *args, **kwargs):
         return self._html_frame(xhtml, self._render_html(xhtml, *args, **kwargs))
 
 class List(Entry):
