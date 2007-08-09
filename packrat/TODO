@@ -1,0 +1,50 @@
+Make tag search work on camera tags
+ -> refactor search filter/Q object construction
+	- negation broken
+	 (check SVN?  Is it even possible with current?)
+
+XXX flaw in search by camera: camera nickname is per-user, but may do
+global search without user qualification...
+
+Add proper parser for date expressions, rather than rely on regexp
+	- add calendar computations (+1w, etc)
+
+Make clickable tag links in picture descriptions add additional terms to current search
+
+Add opensearch links/description
+
+Sort out timezones
+	- camera timezone
+		= may be fixed or variable
+	- cameratag timezone?
+		= timezone of camera in a daterange
+		= cameratags range always UTC
+	- picture timezone
+		= timestamp correction = camera timezone - location timezone
+		= timezone of camera location
+		= derived from geotag?
+		= try to compute if NULL, otherwise explicitly set
+	- user timezone
+	- display timezone
+		= local time of object
+
+UI
+	- separate imagestore/ui namespace (and packages)
+	- YUI?
+	- timeline
+		- dynamic hot zones?
+	- how much non-JS support?
+		- no interaction
+		- incremental lists?
+
+Tags
+	- editing
+
+XXX Really want a query/resource for "all cameratags for this set of
+pics".  Maybe just include it as part of the pic data?  Need only be
+in format=timeline.  Or just get the client to do it?
+
+django.core.urlresolvers.resolve does URL->object mapping
+XXX how to deal with recursion?  Allocate new instances of the view
+objects?  Make them factories?  How does that interact with
+@permalink?
