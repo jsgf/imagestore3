@@ -13,6 +13,8 @@ tagroot = None
 
 __all__ = [ 'Tag' ]
 
+tagre = re.compile('[^\d\W]\w*', re.I | re.U)
+
 class Tag(models.Model):
 
     word = models.CharField(maxlength=50, db_index=True)
@@ -97,12 +99,21 @@ class Tag(models.Model):
 
     @staticmethod
     def tag(fulltag, create=False):
+        """
+        Given a string, return a properly formed tag.  If "create"
+        is true, create any necessary tags.
+
+        Tags may not contain spaces; any spaces are squashed out.
+        They must also match: [a-z][a-z0-9_-]*
+        """
         assert tagroot is not None
         
         # canonicalize
         fulltag = string.strip(fulltag, u' :')
 
-        tags = re.split(':+', fulltag)
+        tags = string.replace(fulltag, ' ', '')
+        tags = re.split(' *:+ *', fulltag)
+                
         scope = tagroot
         for t in tags:
             if create:
