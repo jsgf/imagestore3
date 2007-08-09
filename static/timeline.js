@@ -55,8 +55,8 @@ function onLoad() {
   bandInfos[2].highlight = true;
   bandInfos[3].syncWith = 0;
   bandInfos[3].highlight = true;
-  var camurl = '/imagestore/camera/?format=timeline';
-  var picurl = '/imagestore/image/?format=timeline&limit=1000';
+  var camurl = '/packrat/camera/?format=timeline';
+  var picurl = '/packrat/image/?format=timeline';
 
   tl = Timeline.create(document.getElementById("my-timeline"), bandInfos);
   Timeline.loadXML(picurl, function(xml, url) { pictureSource.loadXML(xml, url); });
