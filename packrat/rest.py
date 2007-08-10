@@ -246,7 +246,7 @@ class RestBase(object):
             response['Last-Modified'] = lm.strftime('%a, %d %b %Y %H:%M:%S GMT')
 
     def make_response(self, body):
-        response = HttpResponse(mimetype = self.mimetype)
+        response = HttpResponse(mimetype = self.mimetype + '; charset=utf-8')
         response.status_code = self.status_code
         ser = self.types[self.format][1]
         ser(body, response)
@@ -261,7 +261,7 @@ class RestBase(object):
         self.args = args
         self.kwargs = kwargs
 
-        print 'authuser=%s' % request.user
+        self.authuser = None
         if request.user.is_authenticated():
             self.authuser = request.user
         

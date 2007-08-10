@@ -23,9 +23,6 @@ class AtomFeed(restlist.List):
     def entries(self):
         return []
 
-    def preamble(self, ns):
-        return []
-
     def opensearch(self):
         return None
     
@@ -37,7 +34,7 @@ class AtomFeed(restlist.List):
         if mod is not None:
             updated = atom.updated(atomtime(mod))
 
-        feed = atom.feed(self.preamble(atom),
+        feed = atom.feed(self.links(atom),
                          self.opensearch(),
                          atom.title(self.title(xhtml)),
                          updated,

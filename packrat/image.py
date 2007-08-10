@@ -294,6 +294,7 @@ def still_image_importer(file, mimetype, owner, visibility, camera = None,
                 visibility = visibility,
                 camera = camera,
                 created_time = created_time,
+                created_time_us = created_time.microsecond,
                 orientation = orientation,
                 **kwargs)
     p.save()

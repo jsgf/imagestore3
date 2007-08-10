@@ -20,7 +20,7 @@ def mktokre():
     tokens = []
     
     for t in [ ('number',  r'\d+'),
-               ('ident',   r'[^\d\W]\w*'),
+               ('ident',   r'[^\d\W][\w-]*'),
                (':', ),
                ('/', ),
                (',', ),
@@ -47,7 +47,7 @@ def mktokre():
         idx += 1
         tokens.append(name)
     regex = ' *(?:%s)' % '|'.join(regex)
-    print 'regex=%s' % regex
+    #print 'regex=%s' % regex
     return (re.compile(regex, re.I | re.U), tokens)
     
 tokre,tokens = mktokre()

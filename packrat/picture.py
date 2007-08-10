@@ -14,6 +14,7 @@ from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 from django.core.exceptions import ObjectDoesNotExist
 from django import newforms as forms
+from django.contrib.auth.decorators import login_required
 
 from ElementBuilder import Namespace, ElementTree
 
@@ -58,6 +59,14 @@ class NotDeletedPictures(FilteredPictures):
     def get_query_set(self):
         return super(NotDeletedPictures, self).get_query_set().filter(deleted=False)
 
+def may_upload(authuser, owner):
+    ret = (authuser and
+           (owner == None or authuser == owner) and
+           authuser.has_perm('packrat.add_picture'))
+
+    print 'authuser=%s owner=%s -> %s' % (authuser, owner, ret)
+    return ret
+
 class Picture(models.Model):
     PUBLIC=0
     RESTRICTED=1
@@ -98,6 +107,11 @@ class Picture(models.Model):
                                                        (270, "270")))
 
     created_time = models.DateTimeField("time picture was taken", db_index=True)
+    created_time_us = models.PositiveIntegerField("microseconds part of picture time",
+                                                  default=0)
+    def get_created_time(self):
+        return self.created_time.replace(microsecond=self.created_time_us)
+    
     uploaded_time = models.DateTimeField("time picture was uploaded",
                                          auto_now_add=True, db_index=True, editable=False)
     modified_time = models.DateTimeField("time picture was last modified",
@@ -159,9 +173,13 @@ class Picture(models.Model):
         return '%d: %s' % (self.id, self.get_title())
 
     class Meta:
-        ordering = [ '-created_time' ]
-        get_latest_by = [ '-created_time' ]
+        ordering = [ '-created_time', '-created_time_us' ]
+        get_latest_by = [ '-created_time', '-created_time_us' ]
 
+        permissions = (
+            ('can_edit_tags', 'Can add new tags to pictures'),
+            )
+        
     class Admin:
         fields = (
             (None, {
@@ -175,6 +193,9 @@ class Picture(models.Model):
         return ('packrat.picture.picture', str(self.id), { 'picid': str(self.id) })
 
     def get_picture_url(self, size='thumb'):
+        if size is None:
+            return '%spic/' % self.get_absolute_url()
+        
         try:
             ext = '.%s' % self.image(size).extension
         except KeyError:
@@ -190,6 +211,9 @@ class Picture(models.Model):
     def get_comment_url(self):
         return '%scomment/' % self.get_absolute_url()
 
+    def get_edit_url(self):
+        return '%sedit/' % self.get_absolute_url()
+    
     def render_img(self, size='thumb', ns=xhtml):
         img = self.image(size)
         width, height = img.dimensions()
@@ -270,8 +294,31 @@ def get_url_picture(authuser, kwargs):
 
     return Picture.getpic(authuser, int(id))
 
+def pic_upload_form(authuser, owner, ns):
+    if not may_upload(authuser, owner):
+        return []
+
+    if owner is None:
+        owner = authuser
+    
+    ret = ns.form({ 'action': '', 'method':'POST',
+                    'enctype':'multipart/form-data' },
+                  ns.label('Title: ', ns.input(type='text', name='title')),
+                  ns.input(type='hidden', name='owner', value=owner.username),
+                  ns.label('Tags: ', ns.input(type='text', name='tags')),
+                  ns.label('Image: ', ns.input(type='file', name='image', accept='image/*')),
+                  ns.input(type='submit'))
+
+    return ret
+
 def picture_upload(self, owner, **kwargs):
     request = self.request
+
+    if not may_upload(self.authuser, owner):
+        return HttpResponseForbidden('Cannot upload pictures')
+
+    if owner is None:
+        owner = self.authuser
     
     def test_exists(sha1):
         try:
@@ -300,8 +347,7 @@ def picture_upload(self, owner, **kwargs):
             return HttpResponseContinue('OK, continue\n')
         return HttpResponseBadRequest('Need image data\n')
 
-    # XXX allow unauthenticated uploads for now
-    if owner is None: # != self.authuser:
+    if owner is None:
         return HttpResponseForbidden('Need owner for image\n')
 
     data = file['content']
@@ -353,7 +399,7 @@ class PictureEntry(AtomEntry):
             self.picture = p
 
     def title(self, ns):
-        return self.picture.get_title()
+        return ns.a(self.picture.get_title(), href=self.picture.get_absolute_url())
 
     def urlparams(self, kwargs):
         from .user import get_url_user
@@ -401,7 +447,7 @@ class PictureEntry(AtomEntry):
 
 
         content = [ ns.div({'class': 'image' },
-                           ns.a({'href': self.append_url_params(p.get_absolute_url())},
+                           ns.a({'href': self.append_url_params(p.get_picture_url(size=None))},
                                 p.render_img(ns=ns))),
                     ns.dl({ 'class': 'metadata' },
                           ns.dt('Owner' ),
@@ -411,7 +457,7 @@ class PictureEntry(AtomEntry):
                           html_derivatives,
                           ns.dt('Taken'),
                           ns.dd({'class': 'created-time'},
-                                microformat.html_datetime(p.created_time)),
+                                microformat.html_datetime(p.get_created_time())),
                           ns.dt('Uploaded'),
                           ns.dd({'class': 'uploaded-time'},
                                 microformat.html_datetime(p.uploaded_time)),
@@ -465,7 +511,7 @@ class PictureEntry(AtomEntry):
                          atom.title(p.get_title()),
                          atom.author(atomperson(p.owner)),
                          atom.updated(atomtime(p.modified_time)),
-                         atom.published(atomtime(p.created_time)),
+                         atom.published(atomtime(p.get_created_time())),
                          imst.uploaded(atomtime(p.uploaded_time)),
                          imst.visibility(Picture.str_visibility(p.visibility)),
                          imst.orientation(str(p.orientation)),
@@ -486,13 +532,6 @@ class PictureEdit(restlist.Entry):
         self.picture = get_url_picture(self.authuser, kwargs)
 
     def form(self):
-        def formfield(f, **kwargs):
-            field = f.formfield(**kwargs)
-            if f.name in ('photographer'):
-                field.required = False
-
-            return field
-        
         return forms.form_for_instance(self.picture)
 
     def title(self, ns):
@@ -521,6 +560,11 @@ class PictureEdit(restlist.Entry):
         return self.show_form(self.form()())
 
     def do_POST(self, *args, **kwargs):
+        if not (self.authuser and
+                (self.authuser == self.picture.owner or
+                 self.authuser.has_perm('packrat.change_picture'))):
+            return HttpResponseForbidden('May not edit picture')
+        
         f = self.form()(self.request.POST)
 
         if not f.is_valid():
@@ -614,7 +658,7 @@ class PictureImage(RestBase):
         ret = None
         if m is not None:
             ret = m.size
-        print '%d.%s = %s' % (self.picture.id, self.size, ret)
+        #print '%d.%s = %s' % (self.picture.id, self.size, ret)
         return ret
 
     def get_last_modified(self):
@@ -625,7 +669,7 @@ class PictureImage(RestBase):
         ret = None
         if m is not None:
             ret = m.update_time
-        print '%d.%s = %s' % (self.picture.id, self.size, ret)
+        #print '%d.%s = %s' % (self.picture.id, self.size, ret)
         return ret
     
     def do_GET(self, *args, **kwargs):
@@ -713,24 +757,10 @@ class PictureFeed(AtomFeed):
             query = SearchParser(self.search).parse(query)
 
         return query
-    
-    def preamble(self, ns):
-        """ Insert a little html form for as a guide for how to post
-            to this channel; it should really be a proper APP thing."""
-        form = xhtml.form({'method': 'post', 'action': '',
-                           'enctype': 'multipart/form-data'},
-                          xhtml.label({'for': 'up-image'}, 'Image'),
-                          xhtml.input({'type': 'file', 'name': 'image',
-                                       'accept': 'image/*', 'id': 'up-image'}),
-                          xhtml.label({'for': 'up-title'}, 'Title'),
-                          xhtml.input({'type': 'text', 'name': 'title',
-                                       'id': 'up-image'}),
-                          xhtml.label({'for': 'up-tags'}, 'Tags'),
-                          xhtml.input({'type': 'text', 'name': 'tags',
-                                       'id': 'iup-tags'}),
-                          xhtml.input({'type': 'submit', 'name': 'upload',
-                                       'value': 'Upload'}))
-        links = self.alt_links(ns)
+
+    def links(self, ns):
+        links = super(PictureFeed,self).links(ns)
+
         p = self.link_prev()
         if p:
             links.append(ns.link(rel="prev", type=self.mimetype, href=p))
@@ -738,7 +768,7 @@ class PictureFeed(AtomFeed):
         if n:
             links.append(ns.link(rel="next", type=self.mimetype, href=n))
 
-        return links + [form]
+        return links
             
     def results(self, order=None):
         if self._query is None or order :
@@ -805,7 +835,7 @@ class PictureFeed(AtomFeed):
         start,limit = self.limits()
         res = self.results(order)
 
-        return [ PictureEntry(p, request=self.request) for p in res[start : start+limit] ]
+        return ( PictureEntry(p, request=self.request) for p in res[start : start+limit] )
 
 
     def link_prev(self):
@@ -834,8 +864,13 @@ class PictureFeed(AtomFeed):
         if n:
             nav.append(ns.a({'href': n, 'class': 'next'}, 'Next'))
 
-        return ns.div(nav, ns.ul([ ns.li(e._render_html(ns, *args, **kwargs))
-                                   for e in self.generate() ]))
+        upload = []
+        if not self.search:
+            upload = pic_upload_form(self.authuser, self.urluser, ns)
+            
+        return ns.div(nav, upload,
+                      ns.ul([ ns.li(e._render_html(ns, *args, **kwargs))
+                              for e in self.generate() ]))
 
     def render_timeline(self, *args, **kwargs):
         def fmt(dt):
@@ -859,7 +894,7 @@ class PictureFeed(AtomFeed):
                     evt.attrib['title'] += ' (%d pics)' % count
                 count = 0
                 evt = timeline.event('',
-                                     start=fmt(p.created_time),
+                                     start=fmt(p.get_created_time()),
                                      title=p.get_title(generate=False),
                                      icon=p.get_picture_url('icon'))
                 tl.append(evt)
@@ -977,7 +1012,7 @@ urlpatterns = \
            ('(?P<picid>[0-9]+)/exif/$',                                 pictureexif),
            ('(?P<picid>[0-9]+)/derived/(?:-/(?P<search>.*))?$',         picturederived),
            ('(?P<picid>[0-9]+)/pic/$',                                  picturesizelist),
-           ('(?P<picid>[0-9]+)/pic/(?P<size>[a-z]*)(?:\.[a-z]*)/?$',    pictureimage),
+           ('(?P<picid>[0-9]+)/pic/(?P<size>[a-z]*)(?:\.[a-z]+)?/?$',   pictureimage),
            ('(?P<picid>[0-9]+)/comment/$',                              commentfeed),
            ('(?P<picid>[0-9]+)/comment/(?P<commentid>[0-9]+)/?$',       comment),
            )

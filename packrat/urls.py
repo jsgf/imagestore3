@@ -13,7 +13,7 @@ class Index(restlist.Entry):
                      ns.li(ns.a({'href': self.append_url_params('tag/')}, 'Tags')))
 
     def title(self, ns):
-        return 'Imagestore'
+        return 'PackRat'
 
 @permalink
 def base_url():

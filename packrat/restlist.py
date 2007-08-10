@@ -21,7 +21,7 @@ class Entry(RestBase):
     def render_json(self, *args, **kwargs):
         return self.generate()
 
-    def alt_links(self, ns):
+    def links(self, ns):
         links = [ ns.link(type=self.types[fmt][0],
                           href=self.append_url_params('', {'format': fmt}),
                           rel="alternate")
@@ -29,7 +29,7 @@ class Entry(RestBase):
         return links
 
     def _html_frame(self, ns, inner):
-        links = self.alt_links(ns)
+        links = self.links(ns)
 
         title = self.title(ns)
 
