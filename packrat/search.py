@@ -179,7 +179,7 @@ def parse_term(tok, next):
             tok = next()
             return parse_predicate(tok, next, t)
         else:
-            return (Q(tags__word = t), tok)
+            return (Q(tags__word__iexact = t), tok)
 
     elif tok[0] == 'eof':
         return (Q(), tok)

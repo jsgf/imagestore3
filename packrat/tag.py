@@ -110,7 +110,7 @@ class Tag(models.Model):
         assert tagroot is not None
         
         # canonicalize
-        fulltag = string.strip(fulltag, u' :')
+        fulltag = string.strip(fulltag, u' :').lower()
 
         tags = string.replace(fulltag, ' ', '')
         tags = re.split(' *:+ *', fulltag)
@@ -118,10 +118,10 @@ class Tag(models.Model):
         scope = tagroot
         for t in tags:
             if create:
-                tag, created = Tag.objects.get_or_create(scope=scope, word=t)
+                tag, created = Tag.objects.get_or_create(scope=scope, word__iexact=t)
             else:
                 try:
-                    tag = Tag.objects.get(scope=scope, word=t)
+                    tag = Tag.objects.get(scope=scope, word__iexact=t)
                 except Tag.DoesNotExist:
                     return None
                 
