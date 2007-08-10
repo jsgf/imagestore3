@@ -44,7 +44,7 @@ class FilteredPictures(models.Manager):
                 vis = Q()
             else:
                 up = user.get_profile()
-                vis = vis | (Q(visibility=Picture.RESTRICTED, owner__in=up.friends) |
+                vis = vis | (Q(visibility=Picture.RESTRICTED, owner__friends=user) |
                              Q(visibility=Picture.PRIVATE, owner=user))
 
         return self.filter(vis)
