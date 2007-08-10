@@ -90,14 +90,18 @@ class Picture(models.Model):
         return Picture.objects.vis_get(user, id=id)
 
     sha1hash = models.CharField("unique sha1 hash of picture",
-                                maxlength=40, db_index=True, unique=True, editable=False)
+                                maxlength=40, db_index=True,
+                                unique=True, editable=False)
     mimetype = models.CharField("mime type for picture", maxlength=40, editable=False)
 
     md5hash = models.CharField("unique md5 hash of picture",
-                               maxlength=32, db_index=True, unique=True, editable=False)
-    datasize = models.PositiveIntegerField("raw picture size in bytes", editable=False)
+                               maxlength=32, db_index=True,
+                               unique=True, editable=False)
+    datasize = models.PositiveIntegerField("raw picture size in bytes",
+                                           editable=False)
 
-    derived_from = models.ForeignKey('self', null=True, blank=True, related_name='derivatives')
+    derived_from = models.ForeignKey('self', null=True, blank=True,
+                                     related_name='derivatives')
 
     width = models.PositiveIntegerField(editable=False)
     height = models.PositiveIntegerField(editable=False)
@@ -106,16 +110,19 @@ class Picture(models.Model):
                                                        (180, "180"),
                                                        (270, "270")))
 
-    created_time = models.DateTimeField("time picture was taken", db_index=True)
+    created_time = models.DateTimeField("time picture was taken",
+                                        db_index=True)
     created_time_us = models.PositiveIntegerField("microseconds part of picture time",
                                                   default=0)
     def get_created_time(self):
         return self.created_time.replace(microsecond=self.created_time_us)
     
     uploaded_time = models.DateTimeField("time picture was uploaded",
-                                         auto_now_add=True, db_index=True, editable=False)
+                                         auto_now_add=True, db_index=True,
+                                         editable=False)
     modified_time = models.DateTimeField("time picture was last modified",
-                                         auto_now=True, db_index=True, editable=False)
+                                         auto_now=True, db_index=True,
+                                         editable=False)
 
     original_ref = models.CharField("external reference for picture",
                                     maxlength=100, blank=True)
@@ -482,10 +489,16 @@ class PictureEntry(AtomEntry):
                           ns.dd(ns.p(p.description)),
                           ),
 
-                    ns.a({'href': self.append_url_params(p.get_comment_url())},
-                         '%d comments' % p.comment_set.count()) ]
+                    ns.p(ns.a({'href': self.append_url_params(p.get_comment_url())},
+                              '%d comments' % p.comment_set.count())) ]
+
+        if self.may_edit():
+            content.append(ns.p(ns.a('Edit', href=p.get_edit_url())))
 
         return content
+
+    def may_edit(self):
+        return self.authuser and self.authuser == self.picture.owner
     
     def render_atom(self):
         p = self.picture
@@ -539,25 +552,26 @@ class PictureEdit(restlist.Entry):
         return 'Editing image #%d' % self.picture.id
 
     def show_form(self, form):
-        file = StringIO()
-
         errors = []
         if form.is_bound and not form.is_valid():
             errors = html.div({'class': 'errors'},
                               html.h2('Errors'),
                               '%(errors)s')
             
+        file = StringIO()
+
         serialize_xml(self._html_frame(html,
                                        html.span(self.picture.render_img(ns=html, size='tiny'),
                                                  errors,
-                                                 html.form(action='', method='POST'),
-                                                 html.ul('%(form)s'),
-                                                 html.input(type='submit'))), file)
+                                                 html.form(html.ul('%(form)s'),
+                                                           html.input(type='submit'),
+                                                           action='', method='POST'))),
+                      file)
         
         return HttpResponse(file.getvalue() % { 'form': form.as_ul(), 'errors': form.errors },
                             mimetype=self.mimetype)        
 
-    def render_html(self):
+    def render_html(self, *args, **kwargs):
         return self.show_form(self.form()())
 
     def do_POST(self, *args, **kwargs):
@@ -981,9 +995,10 @@ class CommentFeed(AtomFeed):
             
         serialize_xml(self._html_frame(html,
                                        html.span(errors,
-                                                 html.form(action='', method='POST'),
-                                                 html.ul('%(form)s'),
-                                                 html.input(type='submit'))), file)
+                                                 html.form(html.ul('%(form)s'),
+                                                           html.input(type='submit'),
+                                                           action='', method='POST'))),
+                      file)
         
         return HttpResponse(file.getvalue() % { 'form': form.as_ul(), 'errors': form.errors },
                             mimetype=self.mimetype)        
