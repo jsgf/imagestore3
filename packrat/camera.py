@@ -267,7 +267,7 @@ class CameraTagEntry(restlist.Entry):
                        ns.a('%s-%s' % (self.cameratag.start, self.cameratag.end),
                             href=self.cameratag.get_absolute_url()))
 
-    def _render_html(self, ns):
+    def _render_html(self, ns, *args, **kwargs):
         ct = self.cameratag
         return [ ns.dt(ns.a(microformat.html_daterange(ct.daterange()),
                             href=self.cameratag.get_absolute_url())),

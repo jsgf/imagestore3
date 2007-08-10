@@ -52,8 +52,7 @@ class List(Entry):
         return []
 
     def generate(self):
-        for e in self.entries():
-            yield e
+        return ( e for e in self.entries() )
 
     def get_Etag(self):
         count=0

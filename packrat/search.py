@@ -6,7 +6,7 @@ import datetime as dt
 
 from django.db.models.query import Q, QNot
 
-from .tag import Tag
+from .tag import Tag, tagre
 from .daterange import daterange
 
 __all__ = [ 'SearchParser' ]
@@ -20,7 +20,7 @@ def mktokre():
     tokens = []
     
     for t in [ ('number',  r'\d+'),
-               ('ident',   r'[^\d\W][\w-]*'),
+               ('ident',   tagre),
                (':', ),
                ('/', ),
                (',', ),

@@ -34,7 +34,7 @@ class RestBase(object):
     implementation of HEAD based on GET; it need only be replaced if
     GET does way too much work to satisfy a HEAD request."""
 
-    __slots__ = [ 'types', 'back_types', 'format', 'mimetype',
+    __slots__ = [ 'types', 'back_types', 'format', 'default_formats', 'mimetype',
                   'request', 'args', 'kwargs', 'authuser', 'status_code' ]
 
     def __init__(self):
@@ -45,6 +45,8 @@ class RestBase(object):
 
         self.format = None
         self.mimetype = None
+
+        self.default_formats = ('xhtml', 'html')
         
         for k,v,s in [ ('xml',          'application/xml',        serialize_xml),
                        ('html',         'text/html',              serialize_xml),
@@ -191,6 +193,13 @@ class RestBase(object):
                 format = self.match_accepts(accepts)
 
         if format is None or format not in formats:
+            print 'failed: trying one of %s' % (self.default_formats,)
+            if self.default_formats:
+                f = [ f for f in self.default_formats if f in formats ]
+                if f:
+                    format = f[0]
+
+        if format is None or format not in formats:
             return self.not_acceptible(requested)
 
         self.format = format
@@ -203,8 +212,8 @@ class RestBase(object):
         """
         return (getattr(self, 'render_%s' % self.format))(*args, **kwargs)
     
-    def do_GET(self, *args, **kwarg):
-        return self.render()
+    def do_GET(self, *args, **kwargs):
+        return self.render(*args, **kwargs)
 
     def do_HEAD(self, *args, **kwargs):
         resp = self.do_GET(self.request, *args, **kwargs)
@@ -269,7 +278,9 @@ class RestBase(object):
             allowed = [ m.lstrip('do_') for m in dir(self) if m.startswith('do_') ]
             return HttpResponseNotAllowed(allowed)
 
-        self.determine_format()
+        resp = self.determine_format()
+        if resp:
+            return resp
         
         method = getattr(self, 'do_%s' % request.method)
 

@@ -7,7 +7,7 @@ from .namespace import xhtml
 from . import restlist
 
 class Index(restlist.Entry):
-    def _render_html(self, ns):
+    def _render_html(self, ns, *args, **kwargs):
         return ns.ul(ns.li(ns.a({'href': self.append_url_params('image/')}, 'Images')),
                      ns.li(ns.a({'href': self.append_url_params('user/')}, 'Users')),
                      ns.li(ns.a({'href': self.append_url_params('tag/')}, 'Tags')))

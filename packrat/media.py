@@ -22,8 +22,7 @@ class Media(models.Model):
         return sha1.digest().encode('hex') == self.sha1hash
 
     def chunks(self):
-        for c in self.mediachunks.all():
-            yield c.data
+        return ( c.data for c in self.mediachunks.all() )
 
     @staticmethod
     def get(key):

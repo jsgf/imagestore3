@@ -19,11 +19,11 @@ from django.contrib.auth.decorators import login_required
 from ElementBuilder import Namespace, ElementTree
 
 from .media import Media
-from .tag import Tag
+from .tag import Tag, TagField
 from .rest import (RestBase, HttpResponseBadRequest,
                    HttpResponseConflict, HttpResponseBadRequest,
                    HttpResponseContinue, HttpResponseExpectationFailed,
-                   serialize_xml)
+                   serialize_xml, serialize_ident)
 from . import EXIF, image, microformat, restlist
 
 from .atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
@@ -138,7 +138,7 @@ class Picture(models.Model):
     description = models.TextField(blank=True)
     copyright = models.CharField(maxlength=100, blank=True)
 
-    tags = models.ManyToManyField(Tag, verbose_name='tags')
+    tags = TagField(Tag, verbose_name='tags')
 
     def get_title(self, generate=True):
         """ Make a valiant attempt to return a title.  First choice is
@@ -448,7 +448,7 @@ class PictureEntry(AtomEntry):
 
         content = [ ns.div({'class': 'image' },
                            ns.a({'href': self.append_url_params(p.get_picture_url(size=None))},
-                                p.render_img(ns=ns))),
+                                p.render_img(size='tiny', ns=ns))),
                     ns.dl({ 'class': 'metadata' },
                           ns.dt('Owner' ),
                           ns.dd({'class': 'owner' }, microformat.hcard(p.owner)),
@@ -512,6 +512,7 @@ class PictureEntry(AtomEntry):
                          atom.author(atomperson(p.owner)),
                          atom.updated(atomtime(p.modified_time)),
                          atom.published(atomtime(p.get_created_time())),
+                         atom.link(rel='alternate', type='text/html', href=p.get_absolute_url()),
                          imst.uploaded(atomtime(p.uploaded_time)),
                          imst.visibility(Picture.str_visibility(p.visibility)),
                          imst.orientation(str(p.orientation)),
@@ -563,7 +564,8 @@ class PictureEdit(restlist.Entry):
         if not (self.authuser and
                 (self.authuser == self.picture.owner or
                  self.authuser.has_perm('packrat.change_picture'))):
-            return HttpResponseForbidden('May not edit picture')
+            return HttpResponseForbidden('May not edit picture: user=%s' %
+                                         (self.authuser and self.authuser.username))
         
         f = self.form()(self.request.POST)
 
@@ -597,7 +599,7 @@ class PictureExif(restlist.Entry):
                 exif[(k, v.tag)] = v.values
         return exif
 
-    def _render_html(self, ns):
+    def _render_html(self, ns, *args, **kwargs):
         return microformat.exif(self.picture.exif(), ns=ns)
 
 class PictureSizeList(restlist.Entry):
@@ -623,7 +625,7 @@ class PictureSizeList(restlist.Entry):
     def render_json(self):
         return self.generate()
     
-    def _render_html(self, ns):
+    def _render_html(self, ns, *args, **kwargs):
         p = self.picture
         return ns.div(ns.ol([ ns.li(ns.a({ 'href': url }, '%s: %dx%d' % (size, w, h)))
                               for size,w,h,url in self.generate() ]))
@@ -637,9 +639,12 @@ class PictureImage(RestBase):
         self.size = None
         super(PictureImage, self).__init__()
 
+        self.add_type('image', 'image/*', serialize_ident)
+        self.default_formats = ('image', )
+        
     def urlparams(self, kwargs):
         self.picture = get_url_picture(self.authuser, kwargs)
-    
+        
     def get_Etag(self):
         if self.size is None:
             return None
@@ -672,7 +677,7 @@ class PictureImage(RestBase):
         #print '%d.%s = %s' % (self.picture.id, self.size, ret)
         return ret
     
-    def do_GET(self, *args, **kwargs):
+    def render_image(self, *args, **kwargs):
         p = self.picture
 
         size = kwargs.get('size', 'orig')

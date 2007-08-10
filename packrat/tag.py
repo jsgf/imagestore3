@@ -4,6 +4,8 @@ import string, re
 
 from django.db import models
 from django.db.models import permalink, Q
+from django.utils.text import capfirst
+import django.newforms as forms
 from django.conf.urls.defaults import patterns, include
 
 from .namespace import xhtml
@@ -14,7 +16,32 @@ tagroot = None
 
 __all__ = [ 'Tag' ]
 
-tagre = re.compile('[^\d\W]\w*', re.I | re.U)
+tagre = r'[^\d\W][\w_-]*'
+c_tagre = re.compile(tagre+'$', re.U | re.I)
+
+class TagField(models.ManyToManyField):
+    def __init__(self, to, **kwargs):
+        super(TagField,self).__init__(to, **kwargs)
+        self.help_text = 'List keywords, separated by ","'
+        
+    def formfield(self, **kwargs):
+        defaults = {'required': not self.blank, 'widget': TagWidget, 'label': capfirst(self.verbose_name), 'help_text': self.help_text }
+        defaults.update(kwargs)
+        return TagFormField(**defaults)
+
+class TagFormField(forms.CharField):
+    def clean(self, value):
+        return [ tt for tt in [ Tag.tag(t, create=True) for t in re.split(' *[,;]+ *', value) ] if tt is not None ]
+
+    def widget_attrs(self, widget):
+        w = super(TagFormField,self).widget_attrs(widget) or {}
+        w.update({'size': '50'})
+        return w
+    
+class TagWidget(forms.TextInput):
+    def render(self, name, value, attrs=None):
+        value = ', '.join([ t.canonical() for t in value ])
+        return super(TagWidget, self).render(name, value, attrs)
 
 class Tag(models.Model):
 
@@ -66,7 +93,7 @@ class Tag(models.Model):
 
         return ns.span(*tags)
 
-    def _render_html(self, ns=xhtml):
+    def _render_html(self, ns=xhtml, *args, **kwargs):
         if self.description is not None:
             return ns.dfn({'title': self.canonical()}, self.description)
         else:
@@ -111,14 +138,16 @@ class Tag(models.Model):
         
         # canonicalize
         fulltag = string.strip(fulltag, u' :').lower()
-
-        tags = string.replace(fulltag, ' ', '')
+        fulltag = string.replace(fulltag, ' ', '')
         tags = re.split(' *:+ *', fulltag)
                 
         scope = tagroot
         for t in tags:
+            if not c_tagre.match(t):
+                return None
+            
             if create:
-                tag, created = Tag.objects.get_or_create(scope=scope, word__iexact=t)
+                tag, created = Tag.objects.get_or_create(scope=scope, word=t)
             else:
                 try:
                     tag = Tag.objects.get(scope=scope, word__iexact=t)
@@ -180,7 +209,7 @@ class TagEntry(restlist.Entry):
                      href=self.tag.get_absolute_url()),
                 self.tag.description or '')
 
-    def _render_html(self, ns):
+    def _render_html(self, ns, *args, **kwargs):
         from .picture import picturefeed, Picture
         t = self.tag
 
