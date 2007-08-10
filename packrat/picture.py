@@ -429,8 +429,7 @@ class PictureEntry(AtomEntry):
         img = p.image(size)
         (width, height) = img.dimensions()
 
-        htmltags = ns.ul([ ns.li(ns.a({ 'href':
-                                        self.append_url_params(PictureFeed(search=tag.canonical()).get_absolute_url()) },
+        htmltags = ns.ul([ ns.li(ns.a({ 'href': tag.get_absolute_url() },
                                       tag._render_html(ns)))
                            for tag in p.effective_tags() ])
 
