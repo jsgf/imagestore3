@@ -1,10 +1,8 @@
 from __future__ import absolute_import
 
-import json
 import sha
 
 from .rest import RestBase
-
 from .namespace import html, xhtml
 
 class Entry(RestBase):
@@ -16,7 +14,7 @@ class Entry(RestBase):
             
     def generate(self):
         """ Return a datastructure which can be rendered into any of the supported formats """
-        yield
+        None
 
     def render_json(self, *args, **kwargs):
         return self.generate()
@@ -52,7 +50,7 @@ class List(Entry):
         return []
 
     def generate(self):
-        return ( e for e in self.entries() )
+        return self.entries()
 
     def get_Etag(self):
         count=0
@@ -71,7 +69,6 @@ class List(Entry):
                        for e in self.generate() ])
 
     def render_json(self, *args, **kwargs):
-        # XXX use an incremental json encoder
-        return [ e.generate() for e in self.generate() ]
+        return ( e.render_json(*args, **kwargs) for e in self.generate() )
 
                           

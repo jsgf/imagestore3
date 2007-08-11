@@ -30,6 +30,7 @@ from .atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
 from .namespace import atom, imst, html, xhtml, opensearch, timeline
 from .daterange import daterange
 from .search import SearchParser
+from .json import extract_attr
 
 __all__ = [ 'Picture' ]
 
@@ -195,6 +196,10 @@ class Picture(models.Model):
             }),
             )
 
+    def get_urn(self, request):
+        return '%s://%s%s' % ('http', request.META['HTTP_HOST'],
+                              self.get_absolute_url())
+
     @permalink
     def get_absolute_url(self):
         return ('packrat.picture.picture', str(self.id), { 'picid': str(self.id) })
@@ -231,9 +236,6 @@ class Picture(models.Model):
 
     def chunks(self, variant='orig'):
         return self.media(variant).chunks()
-
-    def get_urn(self):
-        return self.get_absolute_url()
 
     def exif(self):
         img = string.join([ v for v in self.chunks() ], '')
@@ -519,7 +521,7 @@ class PictureEntry(AtomEntry):
 
         content = self._render_html(xhtml)
 
-        ret = atom.entry(atom.id(self.picture.get_urn()),
+        ret = atom.entry(atom.id(self.picture.get_urn(self.request)),
                          atom.title(p.get_title()),
                          atom.author(atomperson(p.owner)),
                          atom.updated(atomtime(p.modified_time)),
@@ -538,6 +540,35 @@ class PictureEntry(AtomEntry):
             ret.append(atom.link({ 'rel': 'camera', 'href': p.camera.get_absolute_url() }))
 
         return ret
+
+    def jsonize(self):
+        p = self.picture
+
+        ret = extract_attr(p, [ 'id', 'title', 'description', 'owner',
+                                'photographer', 'uploaded_time', 'modified_time',
+                                'width', 'height', 'sha1hash',
+                                'orientation', 'original_ref', 'mimetype' ])
+
+        sz = {}
+
+        for (size,width,height) in image.Image.get_sizes():
+            img = image.ImageProcessor(p, size)
+            width,height = img.dimensions()
+
+            sz[size] = {'width': width, 'height': height,
+                        'url': p.get_picture_url(size) }
+            
+        ret['sizes'] = sz
+        ret['urn'] = p.get_urn(self.request)
+        ret['visibility'] = Picture.str_visibility(p.visibility)
+        ret['tags'] = p.tags.all()
+        ret['created_time'] = p.get_created_time()
+        ret['comment-url' ] = p.get_comment_url()
+        
+        return ret
+
+    def generate(self):
+        return self.jsonize()
 
 class PictureEdit(restlist.Entry):
     
@@ -605,7 +636,7 @@ class PictureExif(restlist.Entry):
         return ns.span('Exif for ', ns.a('"%s"' % self.picture.get_title(),
                                          href=self.picture.get_absolute_url()))
 
-    def render_json(self):
+    def render_json(self, *args, **kwargs):
         exif = {}
         for k,v in self.picture.exif().items():
             if k != 'JPEGThumbnail':
@@ -635,7 +666,7 @@ class PictureSizeList(restlist.Entry):
 
         return ret
 
-    def render_json(self):
+    def render_json(self, *args, **kwargs):
         return self.generate()
     
     def _render_html(self, ns, *args, **kwargs):

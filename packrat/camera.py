@@ -16,6 +16,7 @@ from .namespace import xhtml, html, timeline
 from .user import get_url_user
 from .daterange import daterange
 from .rest import RestBase, serialize_xml
+from .json import extract_attr
 
 class Camera(models.Model):
     owner = models.ForeignKey(User, edit_inline=models.TABULAR)
@@ -34,6 +35,12 @@ class Camera(models.Model):
                 (self.owner.username, self.nickname),
                 { 'camnick': self.nickname, 'user': self.owner.username })
 
+    def jsonize(self):
+        ret = extract_attr(self, ['id', 'nickname', 'make', 'model', 'serial' ])
+        ret.update({'cameratags': self.cameratags_set.all(),
+                    'url': self.get_absolute_url(),})
+        return ret
+    
     class Meta:
         unique_together=(('owner', 'nickname'),)
 
@@ -125,17 +132,11 @@ class CameraEntry(restlist.Entry):
         c = self.camera
         u = c.owner
         up = c.owner.get_profile()
-        
-        return { 'nickname':    c.nickname,
-                 'url':         c.get_absolute_url(),
-                 'make':        c.make,
-                 'model':       c.model,
-                 'serial':      c.serial,
-                 'owner':       u.username,
-                 'pictures':    { 'count':      c.picture_set.count(),
-                                  'search':     up.get_search_url('camera:%s' % c.nickname) },
-                 'keywords':    c.cameratags_set.all(),
-                 }
+
+        ret = c.jsonize()
+        ret['pictures'] = { 'count':      c.picture_set.count(),
+                            'search':     up.get_search_url('camera:%s' % c.nickname) }
+        return ret
 
     def render_timeline(self, *args, **kwargs):
         camtags = CameraTags.objects
@@ -238,6 +239,11 @@ class CameraTags(models.Model):
                 { 'user': self.camera.owner.username,
                   'camnick': self.camera.nickname,
                   'camtagid': self.id })
+
+    def jsonize(self):
+        ret = extract_attr(self, [ 'start', 'end' ])
+        ret.update({'tags': self.tags.all() })
+        return ret
 
     class Meta:
         ordering = [ 'start' ]

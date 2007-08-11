@@ -10,6 +10,7 @@ from django.contrib.auth import login, logout, authenticate
 from . import restlist, microformat
 from .namespace import xhtml
 from .rest import serialize_xml
+from .json import extract_attr
 
 def secure_path(request, path=None, protocol='https'):
     if path is None:
@@ -28,6 +29,10 @@ class UserProfile(models.Model):
     # This seems to be causing a recursive import problem
     #icon = models.ForeignKey('Picture', null=True)
     icon = None
+
+    def get_urn(self, request):
+        return '%s://%s%s' % ('http', request.META['HTTP_HOST'],
+                              self.get_absolute_url())
     
     @permalink
     def get_absolute_url(self):
@@ -42,9 +47,6 @@ class UserProfile(models.Model):
     def get_camera_url(self):
         return self.get_absolute_url() + 'camera/'
 
-    def get_urn(self):
-        return self.get_absolute_url()
-
 def get_url_user(kwargs):
     id = kwargs.get('user', None)
     if id is None:
@@ -56,6 +58,13 @@ class UserList(restlist.List):
     def title(self, ns):
         return 'Users'
 
+    def entries(self):
+        return User.objects.filter(is_active=True)
+    
+    def render_json(self, *args, **kwargs):
+        return [ UserEntry(user=u, request=self.request, authuser=self.authuser).render_json(*args, **kwargs)
+                 for u in self.entries() ]
+    
     def _render_html(self, ns, error=None, *args, **kwargs):
         ret = ns.div()
         
@@ -75,7 +84,7 @@ class UserList(restlist.List):
                                ns.label('Logout: ', ns.input(type='submit'))))
             
         ret.append(ns.ul({ 'class': 'users' },
-                         [ ns.li(microformat.hcard(u, ns=ns)) for u in User.objects.all() ]))
+                         [ ns.li(microformat.hcard(u, ns=ns)) for u in self.entries() ]))
         return ret
 
     @permalink
@@ -112,6 +121,15 @@ def do_loginout(self, request, *args, **kwargs):
 class UserEntry(restlist.Entry):
     __slots__ = [ 'urluser' ]
 
+    def __init__(self, user=None, authuser=None, request=None, *args, **kwargs):
+        super(UserEntry, self).__init__(*args, **kwargs)
+        if user is not None:
+            self.urluser = user
+        if authuser is not None:
+            self.authuser = authuser
+        if request is not None:
+            self.request = request
+            
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
 
@@ -122,6 +140,23 @@ class UserEntry(restlist.Entry):
     def do_POST(self, *args, **kwargs):
         return do_loginout(self, self.request, *args, **kwargs)
 
+    def jsonize(self):
+        u = self.urluser
+        up = u.get_profile()
+        
+        ret = extract_attr(u, [ 'id', 'username', 'last_name', 'first_name', 'email' ])
+        ret.update({'picture-count':    u.pictures.count(),
+                    'urn':              up.get_urn(self.request),
+                    'camera-url':       up.get_camera_url(),
+                    'image-url':        up.get_image_url(),
+                    'logged-in':        self.authuser == self.urluser,
+                    'friends':          self.authuser.friends.all() })
+
+        return ret
+
+    def generate(self):
+        return self.jsonize()
+    
     def _render_html(self, ns, error=None, *args, **kwargs):
         u = self.urluser
         up = u.get_profile()

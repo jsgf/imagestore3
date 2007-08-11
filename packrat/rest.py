@@ -2,7 +2,6 @@ from __future__ import absolute_import
 
 import re
 from fnmatch import fnmatch
-import json
 from cStringIO import StringIO
 from datetime import datetime
 import urllib
@@ -14,6 +13,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 from ElementBuilder import ElementTree
 from .namespace import html
+from . import json
 
 __all__ = [ 'RestBase', 'HttpResponseBadRequest', 'HttpResponseConflict',
             'HttpResponseContinue', ]
@@ -53,6 +53,7 @@ class RestBase(object):
                        ('text',         'text/plain',             serialize_ident),
                        ('xhtml',        'application/xhtml+xml',  serialize_xml),
                        ('atom',         'application/atom+xml',   serialize_xml),
+                       # json should be application/json
                        ('json',         'application/javascript', serialize_json),
                        ('binary',       'application/binary',     serialize_ident),
                        ]:

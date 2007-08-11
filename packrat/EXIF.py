@@ -771,6 +771,10 @@ class Ratio(object):
             self.num=self.num/div
             self.den=self.den/div
 
+    def jsonize(self):
+        self.reduce()
+        return (self.num, self.den)
+
 # for ease of dealing with tags
 class IFD_Tag(object):
     def __init__(self, printable, tag, field_type, values, field_offset,

@@ -53,7 +53,8 @@ class Tag(models.Model):
     # Tags may be geo-located
     #lat = models.FloatField(null=True)
     #long = models.FloatField(null=True)
-
+    #scale = models.PositiveSmallInteger(null=True)
+    
     def __str__(self):
         return self.canonical()
 
@@ -162,6 +163,10 @@ class Tag(models.Model):
 
         return scope
 
+    def jsonize(self):
+        return { 'word': self.word, 'full': self.canonical(),
+                 'description': self.description }
+
     class Meta:
         unique_together=(('scope', 'word'),)
 
@@ -213,6 +218,9 @@ class TagEntry(restlist.Entry):
         t = self.tag
         return ns.a('%s' % (t.description or t.canonical()),
                     href=t.get_absolute_url())
+
+    def generate(self):
+        return self.tag
 
     def rendertag(self, ns):
         return (ns.a(self.tag.canonical(),
@@ -408,7 +416,7 @@ class TagList(restlist.List):
 class TagComplete(TagList):
     def urlparams(self, kwargs):
         super(TagComplete,self).urlparams(kwargs)
-        self.tagword = kwargs.get('tagpart')
+        self.tagword = kwargs.get('tagpart').strip().lower()
 
     def filter(self):
         return Q(word__startswith=self.tagword) & super(TagComplete, self).filter()
