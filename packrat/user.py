@@ -10,7 +10,10 @@ from django.contrib.auth import login, logout, authenticate
 from . import restlist, microformat
 from .namespace import xhtml
 from .rest import serialize_xml
-from .json import extract_attr
+from .json import extract_attr, register_jsonize
+
+register_jsonize(User, lambda u: extract_attr(u, [ 'id', 'username', 'last_name', 'first_name', 'email' ]))
+
 
 def secure_path(request, path=None, protocol='https'):
     if path is None:
@@ -59,10 +62,10 @@ class UserList(restlist.List):
         return 'Users'
 
     def entries(self):
-        return User.objects.filter(is_active=True)
+        return [ UserEntry(u, proto=self) for u in User.objects.filter(is_active=True) ]
     
     def render_json(self, *args, **kwargs):
-        return [ UserEntry(user=u, request=self.request, authuser=self.authuser).render_json(*args, **kwargs)
+        return [ u.render_json(*args, **kwargs)
                  for u in self.entries() ]
     
     def _render_html(self, ns, error=None, *args, **kwargs):
@@ -84,7 +87,7 @@ class UserList(restlist.List):
                                ns.label('Logout: ', ns.input(type='submit'))))
             
         ret.append(ns.ul({ 'class': 'users' },
-                         [ ns.li(microformat.hcard(u, ns=ns)) for u in self.entries() ]))
+                         [ ns.li(microformat.hcard(u.urluser, ns=ns)) for u in self.entries() ]))
         return ret
 
     @permalink
@@ -121,14 +124,11 @@ def do_loginout(self, request, *args, **kwargs):
 class UserEntry(restlist.Entry):
     __slots__ = [ 'urluser' ]
 
-    def __init__(self, user=None, authuser=None, request=None, *args, **kwargs):
+    def __init__(self, user=None, *args, **kwargs):
         super(UserEntry, self).__init__(*args, **kwargs)
+
         if user is not None:
             self.urluser = user
-        if authuser is not None:
-            self.authuser = authuser
-        if request is not None:
-            self.request = request
             
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)
@@ -143,14 +143,14 @@ class UserEntry(restlist.Entry):
     def jsonize(self):
         u = self.urluser
         up = u.get_profile()
-        
+
         ret = extract_attr(u, [ 'id', 'username', 'last_name', 'first_name', 'email' ])
         ret.update({'picture-count':    u.pictures.count(),
                     'urn':              up.get_urn(self.request),
                     'camera-url':       up.get_camera_url(),
                     'image-url':        up.get_image_url(),
                     'logged-in':        self.authuser == self.urluser,
-                    'friends':          self.authuser.friends.all() })
+                    'friends':          u.get_profile().friends.all() })
 
         return ret
 

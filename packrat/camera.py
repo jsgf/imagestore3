@@ -107,19 +107,16 @@ class CameraList(restlist.List):
         if self.urluser:
             cameras = cameras.filter(owner=self.urluser)
             
-        return [ CameraEntry(c, request=self.request) for c in cameras ]
+        return [ CameraEntry(c, proto=self) for c in cameras ]
 
 class CameraEntry(restlist.Entry):
     __slots__ = [ 'camera', 'urluser' ]
     
-    def __init__(self, camera = None, request = None):
-        super(CameraEntry,self).__init__()
+    def __init__(self, camera = None, *args, **kwargs):
+        super(CameraEntry,self).__init__(*args, **kwargs)
         self.add_type('timeline', 'application/xml', serialize_xml)
         if camera:
             self.camera = camera
-
-        if request:
-            self.request = request
 
     def urlparams(self, kwargs):
         self.urluser = get_url_user(kwargs)

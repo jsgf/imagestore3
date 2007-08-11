@@ -11,8 +11,8 @@ from . import restlist
 class AtomFeed(restlist.List):
     __slots__ = [ 'title', 'subtitle', 'uri' ]
 
-    def __init__(self):
-        super(AtomFeed, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(AtomFeed, self).__init__(*args, **kwargs)
 
     def title(self, ns):
         return ''
@@ -45,8 +45,8 @@ class AtomFeed(restlist.List):
         return feed
 
 class AtomEntry(restlist.Entry):
-    def __init__(self):
-        super(AtomEntry, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(AtomEntry, self).__init__(*args, **kwargs)
 
     def render_atom(self, *args, **kwargs):
         ret = atom.entry()

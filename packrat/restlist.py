@@ -6,8 +6,8 @@ from .rest import RestBase
 from .namespace import html, xhtml
 
 class Entry(RestBase):
-    def __init__(self):
-        super(Entry,self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(Entry,self).__init__(*args, **kwargs)
         if hasattr(self, '_render_html'):
             self.__class__.render_html = Entry.__render_html
             self.__class__.render_xhtml = Entry.__render_xhtml

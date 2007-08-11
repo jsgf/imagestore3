@@ -37,7 +37,8 @@ class RestBase(object):
     __slots__ = [ 'types', 'back_types', 'format', 'default_formats', 'mimetype',
                   'request', 'args', 'kwargs', 'authuser', 'status_code' ]
 
-    def __init__(self):
+    def __init__(self, proto=None):
+        self.request = None
         self.authuser = None
 
         self.types = {}
@@ -47,6 +48,13 @@ class RestBase(object):
         self.mimetype = None
 
         self.default_formats = ('xhtml', 'html')
+
+        if proto is not None:
+            # If we're being created as a subordinate view to an
+            # actual requested one, then copy some stuff across
+            self.request = proto.request
+            self.authuser = proto.authuser
+            self.determine_format(proto.format)
         
         for k,v,s in [ ('xml',          'application/xml',        serialize_xml),
                        ('html',         'text/html',              serialize_xml),
@@ -194,7 +202,7 @@ class RestBase(object):
                 format = self.match_accepts(accepts)
 
         if format is None or format not in formats:
-            print 'failed: trying one of %s' % (self.default_formats,)
+            #print 'failed: trying one of %s' % (self.default_formats,)
             if self.default_formats:
                 f = [ f for f in self.default_formats if f in formats ]
                 if f:
@@ -267,6 +275,7 @@ class RestBase(object):
         """ Main entrypoint for all requests.  This allows the class
         instance to be called.  In turn, it examines the HTTP method,
         and farms the work off to an appropriate do_X method."""
+
         self.request = request
         self.args = args
         self.kwargs = kwargs

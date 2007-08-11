@@ -14,7 +14,6 @@ from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 from django.core.exceptions import ObjectDoesNotExist
 from django import newforms as forms
-from django.contrib.auth.decorators import login_required
 
 from ElementBuilder import Namespace, ElementTree
 
@@ -384,9 +383,7 @@ def picture_upload(self, owner, **kwargs):
     if 'tags' in request.POST:
         p.add_tags(request.POST['tags'])
 
-    entry = PictureEntry(p)
-    entry.request = self.request
-    entry.determine_format(self.format)
+    entry = PictureEntry(p, proto=self)
     
     resp = self.make_response(entry.render(format=self.format))
     resp['Location'] = p.get_absolute_url()
@@ -398,11 +395,8 @@ def picture_upload(self, owner, **kwargs):
 class PictureEntry(AtomEntry):
     __slots__ = [ 'picture', 'urluser' ]
     
-    def __init__(self, p = None, request=None):
-        AtomEntry.__init__(self)
-
-        if request is not None:
-            self.request = request
+    def __init__(self, p = None, *args, **kwargs):
+        AtomEntry.__init__(self, *args, **kwargs)
 
         if p is not None:
             self.picture = p
@@ -884,7 +878,7 @@ class PictureFeed(AtomFeed):
         start,limit = self.limits()
         res = self.results(order)
 
-        return ( PictureEntry(p, request=self.request) for p in res[start : start+limit] )
+        return ( PictureEntry(p, proto=self) for p in res[start : start+limit] )
 
 
     def link_prev(self):
