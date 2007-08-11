@@ -11,7 +11,7 @@ from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 
 from . import microformat, restlist
-from .tag import Tag
+from .tag import Tag, TagField
 from .namespace import xhtml, html, timeline
 from .user import get_url_user
 from .daterange import daterange
@@ -210,7 +210,7 @@ class CameraTags(models.Model):
     applied to that picture."""
     
     camera = models.ForeignKey(Camera, edit_inline=models.STACKED)
-    tags = models.ManyToManyField(Tag)
+    tags = TagField()
 
     # start and end are always UTC
     start = models.DateTimeField(db_index=True, core=True)
@@ -239,7 +239,8 @@ class CameraTags(models.Model):
 
     def jsonize(self):
         ret = extract_attr(self, [ 'start', 'end' ])
-        ret.update({'tags': self.tags.all() })
+        ret.update({ 'tags': self.tags.all(),
+                     'url': self.get_absolute_url() })
         return ret
 
     class Meta:
@@ -270,6 +271,9 @@ class CameraTagEntry(restlist.Entry):
                        ns.a('%s-%s' % (self.cameratag.start, self.cameratag.end),
                             href=self.cameratag.get_absolute_url()))
 
+    def generate(self):
+        return self.cameratag.jsonize()
+
     def _render_html(self, ns, *args, **kwargs):
         ct = self.cameratag
         return [ ns.dt(ns.a(microformat.html_daterange(ct.daterange()),
@@ -286,8 +290,9 @@ class CameraTagList(restlist.List):
                                          href=self.urluser.get_profile().get_absolute_url()),
                        ' ', ns.a(self.camera.nickname, href=self.camera.get_absolute_url()))
 
-    def generate(self):
+    def entries(self):
         return [ CameraTagEntry(ct) for ct in self.camera.cameratags_set.all() ]
+
 
 __all__ = [ 'Camera', 'get_camera', 'CameraTags' ]
 

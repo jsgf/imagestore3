@@ -145,7 +145,7 @@ class Picture(models.Model):
     description = models.TextField(blank=True)
     copyright = models.CharField(maxlength=100, blank=True)
 
-    tags = TagField(Tag, verbose_name='tags')
+    tags = TagField(verbose_name='tags')
 
     def get_title(self, generate=True):
         """ Make a valiant attempt to return a title.  First choice is
@@ -448,44 +448,47 @@ class PictureEntry(AtomEntry):
                                                     p.derived_from.get_title()))) ]
 
 
-        content = [ ns.div({'class': 'image' },
-                           ns.a({'href': self.append_url_params(p.get_picture_url(size=None))},
-                                p.render_img(size='tiny', ns=ns))),
-                    ns.dl({ 'class': 'metadata' },
-                          ns.dt('Owner' ),
-                          ns.dd({'class': 'owner' }, microformat.hcard(p.owner)),
-                          photog,
-                          derived_from,
-                          html_derivatives,
-                          ns.dt('Taken'),
-                          ns.dd({'class': 'created-time'},
-                                microformat.html_datetime(p.get_created_time())),
-                          ns.dt('Uploaded'),
-                          ns.dd({'class': 'uploaded-time'},
-                                microformat.html_datetime(p.uploaded_time)),
-                          ns.dt('Modified'),
-                          ns.dd({'class': 'modified-time'},
-                                microformat.html_datetime(p.modified_time)),
-                          ns.dt('Orientation'),
-                          ns.dd({'class': 'orientation'},
-                                str(p.orientation)),
-                          ns.dt('Visibility'),
-                          ns.dd(ns.dfn({'class': 'visibility',
-                                        'title': str(p.visibility) },
-                                       Picture.str_visibility(p.visibility))),
-                          ns.dt('Camera'),
-                          ns.dd(ns.a({'href': self.append_url_params(p.camera.get_absolute_url(), remove='format')},
-                                     p.camera.nickname),
-                                ' ',
-                                ns.a({'href': self.append_url_params(p.get_exif_url(), remove='format')}, 'Exif')),
-                          ns.dt({'class': 'tags'}, 'Tags'),
-                          ns.dd(htmltags),
-                          ns.dt('Description'),
-                          ns.dd(ns.p(p.description)),
-                          ),
-
-                    ns.p(ns.a({'href': self.append_url_params(p.get_comment_url())},
-                              '%d comments' % p.comment_set.count())) ]
+        content = ns.div({'class': 'image%s' % (self.may_edit() and ' editable' or '') },
+                         ns.a({'href': self.append_url_params(p.get_picture_url(size=None))},
+                              p.render_img(size='tiny', ns=ns)),
+                         ns.dl({ 'class': 'metadata' },
+                               ns.dt('Owner' ),
+                               ns.dd({'class': 'owner' }, microformat.hcard(p.owner)),
+                               photog,
+                               derived_from,
+                               html_derivatives,
+                               ns.dt('Taken'),
+                               ns.dd({'class': 'created-time'},
+                                     microformat.html_datetime(p.get_created_time())),
+                               ns.dt('Uploaded'),
+                               ns.dd({'class': 'uploaded-time'},
+                                     microformat.html_datetime(p.uploaded_time)),
+                               ns.dt('Modified'),
+                               ns.dd({'class': 'modified-time'},
+                                     microformat.html_datetime(p.modified_time)),
+                               ns.dt('Orientation'),
+                               ns.dd({'class': 'orientation'},
+                                     str(p.orientation)),
+                               ns.dt('Visibility'),
+                               ns.dd(ns.dfn({'class': 'visibility',
+                                             'title': str(p.visibility) },
+                                            Picture.str_visibility(p.visibility))),
+                               ns.dt('Camera'),
+                               ns.dd(ns.a({'href': self.append_url_params(p.camera.get_absolute_url(),
+                                                                          remove=['start', 'limit'])},
+                                          p.camera.nickname),
+                                     ' ',
+                                     ns.a({'href': self.append_url_params(p.get_exif_url(),
+                                                                          remove=['start', 'limit'])},
+                                          'Exif')),
+                               ns.dt({'class': 'tags'}, 'Tags'),
+                               ns.dd(htmltags),
+                               ns.dt('Description'),
+                               ns.dd(ns.p(p.description)),
+                               ),
+                         
+                         ns.p(ns.a({'href': self.append_url_params(p.get_comment_url())},
+                                   '%d comments' % p.comment_set.count())))
 
         if self.may_edit():
             content.append(ns.p(ns.a('Edit', href=p.get_edit_url())))
@@ -551,13 +554,14 @@ class PictureEntry(AtomEntry):
 
             sz[size] = {'width': width, 'height': height,
                         'url': p.get_picture_url(size) }
-            
-        ret['sizes'] = sz
-        ret['urn'] = p.get_urn(self.request)
-        ret['visibility'] = Picture.str_visibility(p.visibility)
-        ret['tags'] = p.tags.all()
-        ret['created_time'] = p.get_created_time()
-        ret['comment-url' ] = p.get_comment_url()
+
+        ret.update({ 'sizes':            sz,
+                     'urn':              p.get_urn(self.request),
+                     'visibility':       Picture.str_visibility(p.visibility),
+                     'tags':             p.tags.all(),
+                     'created_time':     p.get_created_time(),
+                     'comment-url':      p.get_comment_url(),
+                     'may_edit':         self.may_edit() })
         
         return ret
 

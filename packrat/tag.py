@@ -21,8 +21,8 @@ tagre = r'[^\d\W][\w_-]*'
 c_tagre = re.compile(tagre+'$', re.U | re.I)
 
 class TagField(models.ManyToManyField):
-    def __init__(self, to, **kwargs):
-        super(TagField,self).__init__(to, **kwargs)
+    def __init__(self, **kwargs):
+        super(TagField,self).__init__(Tag, **kwargs)
         self.help_text = 'List keywords, separated by ","'
         
     def formfield(self, **kwargs):

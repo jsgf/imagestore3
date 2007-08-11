@@ -36,6 +36,9 @@ class Encoder(JSONEncoder):
 def write(obj):
     return Encoder(ensure_ascii=False, indent=2).encode(obj)
 
+def write_iter(obj):
+    return Encoder(ensure_ascii=False, indent=2).iterencode(obj)
+
 from datetime import date, time, datetime
 
 register_jsonize(time, lambda dt: dt.isoformat())
