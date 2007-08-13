@@ -28,6 +28,7 @@ def mktokre():
                ('|', r'\|'),
                ('-', ),
                ('*', r'\*'),
+               ('+', r'\+'),
                ('(', r'\('),
                (')', r'\)'),
                ('<=',r'\<='),
@@ -67,9 +68,12 @@ def tokenize(str):
         tid, = [ t[0] for t in enumerate(m.groups()) if t[1] is not None ]
         yield (tokens[tid], m.groups()[tid])
 
+        if tokens[tid] == 'eof':
+            break
+
 def expect(want, tok, next):
     if tok[0] != want:
-        raise ParseException, 'Expected tok "%s", got "%s:%s"' % (want, tok[0], tok[1])
+        raise ParseException('Expected tok "%s", got "%s:%s"' % (want, tok[0], tok[1]), next)
     v = tok[1]
     tok = next()
     return v,tok
@@ -90,21 +94,28 @@ def parse(query, tok, next):
          | (':' ident)+ *?
          | '(' orExpr ')'
 
-    predicate := dateexpr
+    predicate := daterel
               | ('public' | 'private' | 'restricted')
               | username
 
-    dateexpr := ('<' | '<=' | '=' | '>=' | '>')? daterange
+    daterel := ('<' | '<=' | '=' | '>=' | '>')? dateexpr
 
-    daterange := period? datetime (',' datetime)
+    periods := ('day' | 'week' | 'month' | 'year')
+    
+    dateexpr :=  periods ':' daterange
+             | daterange
 
-    period := ('day' | 'week' | 'month' | 'year') ':'
+    daterange: datedelta ( ',' datedelta )?
 
-    datetime := date time?
-             | 'now'
-             | 'today'
+    datedelta : datetime ( ('-' | '+') number? periods )*
+              
+    datetime := date ('T' time)?
+             | '(' dateexpr ')'
 
     date := number ('-' number ('-' number)?)?
+         | 'today'
+         | 'now'
+         
     time := number ':' number (':' number)
 
     """
@@ -119,12 +130,11 @@ def parse(query, tok, next):
 
 def parse_notExpr(query, tok, next):
     if tok[0] == '-':
-        print '- found'
         tok = next()
         if tok[0] == '/':
             # Ignore -/-/ sequences
-            print '-/ found'
             return query,tok
+        
         q,tok = parse_orExpr(tok, next)
         if tok[0] == 'eof':
             return query,tok
@@ -185,14 +195,14 @@ def parse_term(tok, next):
         return (Q(), tok)
     
     else:
-        raise ParseException, 'unexpected token %s: %s' % tok
+        raise ParseException('unexpected token %s: %s' % tok, next)
 
 def parse_predicate(tok, next, pred):
     from .picture import Picture
     
     if pred == 'vis':
         if tok[0] != 'ident' or tok[1] not in ('public', 'private', 'restricted'):
-            raise ParseException, 'Unexpected visibility token %s:%s' % tok
+            raise ParseException('Unexpected visibility token %s:%s' % tok, next)
         q = Q(visibility = { 'public': Picture.PUBLIC,
                              'restricted': Picture.RESTRICTED,
                              'private': Picture.PRIVATE }[tok[1]])
@@ -215,61 +225,106 @@ def parse_predicate(tok, next, pred):
         return (q,tok)
     
     elif pred in ('created', 'updated', 'modified'):
-        dr,tok,rel = parse_dateexpr(tok, next)
+        dr,tok,rel = parse_daterel(tok, next)
         assert isinstance(dr.start, dt.datetime)
         assert isinstance(dr.end, dt.datetime)
         
-        if rel == 'eq':
+        if rel == '=':
             q = Q(**{'%s_time__range' % pred: (dr.start, dr.end)})
-        elif rel == 'lt':
+        elif rel == '<':
             q = Q(**{'%s_time__lt' % pred: dr.start})
-        elif rel == 'lte':
+        elif rel == '<=':
             q = Q(**{'%s_time__lt' % pred: dr.end})
-        elif rel == 'gte':
+        elif rel == '>=':
             q = Q(**{'%s_time__gte' % pred: dr.start})
-        elif rel == 'gt':
+        elif rel == '>':
             q = Q(**{'%s_time__gte' % pred: dr.end})
             
         return (q, tok)
 
     else:
-        raise ParseException, 'unknown predicate: %s' % pred
+        raise ParseException('unknown predicate: %s' % pred, next)
 
-def parse_dateexpr(tok, next):
-    rel = 'eq'
-    rels = { '<=': 'lte',
-             '<': 'lt',
-             '=': 'eq',
-             '>': 'gt',
-             '>=': 'gte' }
-    if tok[0] in rels:
-        rel = rels[tok[0]]
+def parse_daterel(tok, next):
+    rel = '='
+    if tok[0] in ('<=', '<', '=', '>', '>='):
+        rel = tok[0]
         tok = next()
 
-    dr,tok = parse_daterange(tok, next)
+    dr,tok = parse_dateexpr(tok, next)
 
     return dr,tok,rel
 
-def parse_daterange(tok, next):
+def is_period(tok):
+    return tok[0] == 'ident' and tok[1] in ('day', 'week', 'month', 'year')
+        
+def parse_dateexpr(tok, next):
     period=None
-    if tok[0] == 'ident' and tok[1] in ('day', 'week', 'month', 'year'):
+    if is_period(tok):
         period = tok[1]
         tok = next()
         v,tok = expect(':', tok, next)
         
-    start,tok = parse_datetime(tok, next)
-    end = start
-    if tok[0] == ',':
-        tok = next()
-        end,tok = parse_datetime(tok, next)
+    ret,tok = parse_daterange(tok, next)
 
-    ret = start | end
     if period is not None:
         ret.round(period)
 
     return ret, tok
 
+def parse_daterange(tok, next):
+    start,tok = parse_datedelta(tok, next)
+    end = start
+    
+    if tok[0] == ',':
+        tok = next()
+        end,tok = parse_datedelta(tok, next)
+
+    return (start | end), tok
+
+def parse_datedelta(tok, next):
+    dt, tok = parse_datetime(tok, next)
+
+    # Getting a bit lexically swampy here: '-' is ambigious since it
+    # could either be a continuation of a date, or the start of a
+    # delta expression.  Date binds more tightly, and parens are
+    # needed to disambiguate:
+    #  (2007-6)-3month
+    #  (2007-6-3)-month
+    #
+    # Similarly 'today-week' is tokenized as a single ident rather
+    # than 'today' '-' 'week', so again, parens or a space are needed:
+    # '(today)-week' 'today - week'
+
+    while tok[0] in ('-', '+'):
+        sign = tok[0]
+        tok = next()
+        
+        n = 1
+        
+        if tok[0] == 'number':
+            n = int(tok[1])
+            tok = next()
+
+        if sign == '-':
+            n = -n
+            
+        if not is_period(tok):
+            raise ParseException('expected day|week|month|year, got %s:%s' % tok, next)
+        period = tok[1]
+        tok = next()
+        
+        dt.dateadd(**{ period: n })
+
+    return dt,tok
+
 def parse_datetime(tok, next):
+    if tok[0] == '(':
+        tok = next()
+        ret,tok = parse_dateexpr(tok, next)
+        v,tok = expect(')', tok, next)
+        return ret,tok
+    
     if tok[0] == 'ident' and tok[1] in ('today', 'now'):
         dr = daterange(tok[1])
         tok = next()
@@ -278,7 +333,7 @@ def parse_datetime(tok, next):
     d,period,tok = parse_date(tok, next)
 
     t = dt.time(0,0,0)
-    if tok[0] == 'ident' and tok[1] == 't':
+    if tok[0] == 'ident' and tok[1] in ('T', 't'):
         tok = next()
         t,tok = parse_time(tok, next)
 
@@ -325,7 +380,13 @@ def parse_time(tok, next):
     return dt.time(hour, min, sec), tok
 
 class ParseException(Exception):
-    pass
+    def __init__(self, msg, next):
+        remains = [ '%s:%s' % t for t in next.__self__ if t[0] != 'eof' ]
+
+        msg = '%s: remaining tokens: %s' % (msg, remains)
+        print 'msg=%s' % msg
+
+        super(ParseException, self).__init__(msg)
 
 class TokenException(ParseException):
     pass
@@ -339,8 +400,9 @@ class SearchParser(object):
     def parse(self, query):
         toks = tokenize(self.search)
 
-        def next():
-            t = toks.next()
-            print 'next: %s:%s' % t
-            return t
-        return parse(query, next(), next)
+        def trace():
+            for t in toks:
+                print 'next: %s:%s' % t
+                yield t
+
+        return parse(query, trace().next(), trace().next)

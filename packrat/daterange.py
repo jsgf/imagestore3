@@ -116,6 +116,11 @@ class daterange(object):
         if period is not None:
             self.round(period)
 
+    def dateadd(self, **kwargs):
+        self.start = dateadd(self.start, **kwargs)
+        if self.end is not None:
+            self.end = dateadd(self.end, **kwargs)
+
     def __str__(self):
         return '%s - %s' % (self.start, self.end)
 
