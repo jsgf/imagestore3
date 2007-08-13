@@ -825,7 +825,7 @@ class PictureFeed(AtomFeed):
             query = self.filter(query)
             query = query.distinct()
             if order:
-                query = query.order_by(order)
+                query = query.order_by(*order)
             self._query = query
             
         return self._query
@@ -874,21 +874,24 @@ class PictureFeed(AtomFeed):
 
         orders = {
             'id': 'id',
-            'created': 'created_time',
-            'uploaded': 'uploaded_time',
-            'modified': 'modified_time',
-            'random': '?'
+            'created': ('created_time', 'created_time_us'),
+            'uploaded': ('uploaded_time', ),
+            'modified': ('modified_time', ),
+            'random': ('?', ),
             }
 
         default = '-created'
         order = self.request.GET.get('order', default)
 
         if order[0] == '-' and order[1:] in orders:
-            order = '-' + orders[order[1:]]
+            order = [ '-' + o for o in orders[order[1:]] ]
         elif order in orders:
             order = orders[order]
         else:
             order = default
+
+        if order[0] == '-?':
+            order = [ '?' ]
 
         start,limit = self.limits()
         res = self.results(order)
