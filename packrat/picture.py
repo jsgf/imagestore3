@@ -776,7 +776,7 @@ class PictureFeed(AtomFeed):
         if self.search:
             return ('packrat.picture.picturesearch',
                     [ self.urluser, self.search ],
-                    { 'search': self.search, 'urluser': self.urluser })
+                    { 'search': self.search + '/', 'urluser': self.urluser })
         else:
             return ('packrat.picture.picturefeed',
                     [ self.urluser ],
@@ -793,9 +793,19 @@ class PictureFeed(AtomFeed):
         from .user import get_url_user
 
         self.urluser = get_url_user(kwargs)
-        self.search = kwargs.get('search', '')
-        if self.search is not None:
-            self.search = self.search.strip(' /+')
+
+        search = ''
+
+        if 'search' in kwargs:
+            search += kwargs['search']
+
+        if 'q' in self.request.GET:
+            search += self.request.GET['q']
+
+        search = search.strip('+ /')
+
+        if search:
+            self.search = search
 
     def filter(self, query):
         if self.urluser is not None:
@@ -851,6 +861,11 @@ class PictureFeed(AtomFeed):
         if res.count() > 0:
             return res[0].modified_time
         return None
+
+    def do_GET(self, *args, **kwargs):
+        if 'q' in self.request.GET:
+            return HttpResponseRedirect(self.append_url_params(self.get_absolute_url(), remove='q'))
+        return super(PictureFeed,self).do_GET(*args, **kwargs)
 
     def render_json(self, *args, **kwargs):
         count = self.results().count()
@@ -928,8 +943,11 @@ class PictureFeed(AtomFeed):
         upload = []
         if not self.search:
             upload = pic_upload_form(self.authuser, self.urluser, ns)
-            
-        return ns.div(nav, upload,
+        search = ns.form({'action': '', 'method': 'GET'},
+                         ns.label('Search: ', ns.input(name='q', type='text')),
+                         ns.input(type='submit', value='Search'))
+        
+        return ns.div(nav, upload, search,
                       ns.ul([ ns.li(e._render_html(ns, *args, **kwargs))
                               for e in self.generate() ]))
 
