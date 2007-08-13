@@ -8,6 +8,9 @@ __all__ = [ 'daterange' ]
 def dateadd(d, year=0, month=0, day=0, week=0):
     y,m = d.year, d.month
 
+    t = d.time()
+    d = d.date()
+    
     y += year
     m += month
     while m > 12:
@@ -21,11 +24,29 @@ def dateadd(d, year=0, month=0, day=0, week=0):
 
     d = date.fromordinal(d.toordinal() + day + week*7)
 
-    return d
+    return datetime.combine(d,t)
+
     
 def weekstart(d):
     return datetime.fromordinal(d.toordinal() - calendar.weekday(d.year, d.month, d.day))
 
+
+def roundup(period, dt):
+    return rounddown(period, dateadd(dt, **{period: 1}))
+
+def rounddown(period, dt):
+    dt = dt.replace(hour=0, minute=0, second=0)
+    
+    if period == 'day':
+        pass
+    elif period == 'week':
+        dt = weekstart(dt)
+    elif period == 'month':
+        dt = dt.replace(day=1)
+    elif period == 'year':
+        dt = dt.replace(month=1, day=1)
+
+    return dt
 
 class daterange(object):
     # start/end is None means unbounded
@@ -51,10 +72,19 @@ class daterange(object):
 
         return max(a,b)
 
+    def round(self, period):
+        assert self.start is not None
+        assert self.end is not None
+
+        assert period in ('day', 'week', 'month', 'year')
+
+        self.start = rounddown(period, self.start)
+        self.end = roundup(period, self.end)
+
     def __init__(self, start=None, end=None, period=None):
         if start == 'today':
             start = date.today()
-            if period is None and end is None:
+            if period is None:
                 period = 'day'
         elif start == 'now':
             start = datetime.now()
@@ -62,46 +92,29 @@ class daterange(object):
 
         if isinstance(start, date):
             start = datetime.combine(start, time(0,0))
+        assert isinstance(start, datetime)
 
-        if end == 'today':
+        if end is None:
+            end = start
+        elif end == 'today':
             end = date.today()
+            if period is None:
+                period = 'day'
         elif end == 'now':
             end = datetime.now()
 
         if isinstance(end, date):
             end = datetime.combine(end, time(0,0))
-            
-        if period is not None:
-            if start is None:
-                raise Exception("Must specify date with period (start=%s period=%s)" % (start, period))
+        assert isinstance(end, datetime)
 
-            if period not in ('day', 'week', 'month', 'year'):
-                raise Exception("Bad period '%s'" % period)
-
-            start = start.date()
-
-            if period == 'year':
-                start = start.replace(month=1,day=1)
-                end = dateadd(start, year=1)
-            elif period == 'month':
-                start = start.replace(day=1)
-                end = dateadd(start, month=1)
-            elif period == 'day':
-                end = dateadd(start, day=1)
-            elif period == 'week':
-                start = weekstart(start)
-                end = dateadd(start, week=1)
-
-            start = datetime.combine(start, time(0,0))
-            end = datetime.combine(end, time(0,0))
-            
-        if (start is not None and
-            end is not None and
-            end < start):
-            start, end = end, start
+        if end < start:
+            start,end = end,start
             
         self.start = start
         self.end = end
+
+        if period is not None:
+            self.round(period)
 
     def __str__(self):
         return '%s - %s' % (self.start, self.end)

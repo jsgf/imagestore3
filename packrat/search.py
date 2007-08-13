@@ -25,13 +25,13 @@ def mktokre():
                ('/', ),
                (',', ),
                ('&', ),
-               ('|', '\|'),
+               ('|', r'\|'),
                ('-', ),
-               ('*', '\*'),
-               ('(', '\\('),
-               (')', '\\)'),
-               ('<', ),
-               ('<=', ),
+               ('*', r'\*'),
+               ('(', r'\('),
+               (')', r'\)'),
+               ('<=',r'\<='),
+               ('<', r'\<'),
                ('=', ),
                ('>=', ),
                ('>', ),
@@ -216,7 +216,20 @@ def parse_predicate(tok, next, pred):
     
     elif pred in ('created', 'updated', 'modified'):
         dr,tok,rel = parse_dateexpr(tok, next)
-        q = Q({'%s_time__%s' % (pred, rel): dr.start })
+        assert isinstance(dr.start, dt.datetime)
+        assert isinstance(dr.end, dt.datetime)
+        
+        if rel == 'eq':
+            q = Q(**{'%s_time__range' % pred: (dr.start, dr.end)})
+        elif rel == 'lt':
+            q = Q(**{'%s_time__lt' % pred: dr.start})
+        elif rel == 'lte':
+            q = Q(**{'%s_time__lt' % pred: dr.end})
+        elif rel == 'gte':
+            q = Q(**{'%s_time__gte' % pred: dr.start})
+        elif rel == 'gt':
+            q = Q(**{'%s_time__gte' % pred: dr.end})
+            
         return (q, tok)
 
     else:
@@ -245,16 +258,16 @@ def parse_daterange(tok, next):
         v,tok = expect(':', tok, next)
         
     start,tok = parse_datetime(tok, next)
-    end = None
+    end = start
     if tok[0] == ',':
         tok = next()
         end,tok = parse_datetime(tok, next)
 
-    if period:
-        start = rounddown(period, start)
-        end = roundup(period, end or start)
+    ret = start | end
+    if period is not None:
+        ret.round(period)
 
-    return daterange(start, end, period), tok
+    return ret, tok
 
 def parse_datetime(tok, next):
     if tok[0] == 'ident' and tok[1] in ('today', 'now'):
