@@ -1,0 +1,42 @@
+body { 
+  background-color: #444;
+  color: #eee;
+
+  margin-left: 11em;
+
+  font-family: bitstream vera sans, verdana, arial, helvetica, sans-serif;
+}
+
+#sidebar { 
+  position: fixed;
+  width: 9em;
+  height: auto;
+  top: 5%%;
+  left: 10px;
+  right: auto;
+  bottom: 5%%;
+
+  font-size: 70%%;
+
+  border: 1px solid #555555;
+
+  padding: 5px;
+
+  background-color: #444;
+}
+
+ul.horiz { 
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+ul.horiz > li {
+  display: inline;
+  list-style-type: none;
+  padding: 4px 2px;
+}
+
+
+.thumb img { 
+  border: 0;
+}

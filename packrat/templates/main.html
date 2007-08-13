@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block inlinescript %}
+      new image_search('results', [ 'vis:public' ], { limit: 32, order: 'random' });
+{% endblock %}
+{% block maintitle %}Recent pictures{% endblock %}
+{% block main %}
+      <ul class="search-results horiz" id="results"></ul>
+{% endblock main %}

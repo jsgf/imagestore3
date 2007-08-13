@@ -2,6 +2,7 @@
 from django.db.models import permalink
 from django.http import HttpResponse
 from django.conf.urls.defaults import patterns, include
+from django.views import static
 
 from .namespace import xhtml
 from . import restlist
@@ -21,10 +22,16 @@ def base_url():
 
 index = Index()
 
+def static(request, *args, **kwargs):
+    from django.views.static import serve
+    return serve(request, document_root = '/home/jeremy/hg/imagestore3/packrat/static/',
+                 *args, **kwargs)
+
 # Order matters here, so that we get the reverse lookup correct
 urlpatterns = patterns('',
+            (r'^static/(?P<path>.*)$',  static),
             ('^$',                      'packrat.urls.index'),
-            #('ui/',                    include('packrat.ui')),
+            ('ui/',                     include('packrat.ui')),
             ('^camera/$',               'packrat.camera.cameralist'),
             ('^image/',                 include('packrat.picture')),
             ('^user/',                  include('packrat.user')),
