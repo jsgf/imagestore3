@@ -30,13 +30,13 @@ ul.horiz {
   padding: 0;
   border: 0;
 }
+
 ul.horiz > li {
   display: inline;
   list-style-type: none;
-  padding: 4px 2px;
 }
-
 
 .thumb img { 
   border: 0;
+  margin: 2px;
 }
