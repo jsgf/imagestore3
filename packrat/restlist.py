@@ -63,7 +63,8 @@ class List(Entry):
 
         if count > 0:
             return sha1.digest().encode('hex')
-
+        return None
+    
     def _render_html(self, ns, *args, **kwargs):
         return ns.ul([ ns.li(e._render_html(ns, *args, **kwargs))
                        for e in self.generate() ])

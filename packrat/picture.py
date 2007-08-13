@@ -543,8 +543,7 @@ class PictureEntry(AtomEntry):
 
         ret = extract_attr(p, [ 'id', 'title', 'description', 'owner',
                                 'photographer', 'uploaded_time', 'modified_time',
-                                'width', 'height', 'sha1hash',
-                                'orientation', 'original_ref', 'mimetype' ])
+                                'sha1hash', 'orientation', 'original_ref', 'mimetype' ])
 
         sz = {}
 
@@ -555,13 +554,16 @@ class PictureEntry(AtomEntry):
             sz[size] = {'width': width, 'height': height,
                         'url': p.get_picture_url(size) }
 
-        ret.update({ 'sizes':            sz,
-                     'urn':              p.get_urn(self.request),
-                     'visibility':       Picture.str_visibility(p.visibility),
-                     'tags':             p.tags.all(),
-                     'created_time':     p.get_created_time(),
-                     'comment-url':      p.get_comment_url(),
-                     'may_edit':         self.may_edit() })
+        ret.update({ 'sizes':           sz,
+                     'camera':          { 'id': p.camera.id,
+                                          'nickname': p.camera.nickname,
+                                          'url': p.camera.get_absolute_url() },
+                     'urn':             p.get_urn(self.request),
+                     'visibility':      Picture.str_visibility(p.visibility),
+                     'tags':            p.tags.all(),
+                     'created_time':    p.get_created_time(),
+                     'comment-url':     p.get_comment_url(),
+                     'may_edit':        self.may_edit() })
         
         return ret
 
@@ -849,6 +851,15 @@ class PictureFeed(AtomFeed):
         if res.count() > 0:
             return res[0].modified_time
         return None
+
+    def render_json(self, *args, **kwargs):
+        count = self.results().count()
+        start,limit = self.limits()
+
+        return { 'totalResults': count,
+                 'startIndex': start,
+                 'itemsPerPage': limit,
+                 'results': super(AtomFeed, self).render_json(*args, **kwargs) }
     
     def opensearch(self):
         count = self.results().count()
