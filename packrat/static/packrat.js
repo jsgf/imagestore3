@@ -1,21 +1,21 @@
-var base = window.base;
+var base = window.packrat_base;
 
 var image_search = function(id, search, params) {
-	this.thumbTemplate = new Ext.Template(
+	var thumbTemplate = new Ext.Template(
 		'<li><span class="image" id="img{id}">' +
 		  '<span class="thumb">' + 
-		    '<a href="{imgurl}" rel="lightbox" title="{title}">'+
+		    '<a href="{imgurl}" class="thickbox" rel="search-results" title="{title}">'+
 		    '<img width="{width}" height={height}" src="{thumburl}" title="{title}">'+
 		    '</a>' +
 		  '</span>' +
 		'</span></li>'
 		);
-	this.thumbTemplate.compile();
+	thumbTemplate.compile();
 
-	this.view = new Ext.JsonView(id, this.thumbTemplate, { jsonRoot: 'results' });
+	var view = new Ext.JsonView(id, thumbTemplate, { jsonRoot: 'results' });
 
 
-	this.view.prepareData = function(p) {
+	view.prepareData = function(p) {
 		var size = 'stamp';
 
 		return { id: p.id,
@@ -35,9 +35,10 @@ var image_search = function(id, search, params) {
 	
 	params.format = 'json'
 
-	this.view.on('load', initLightbox, null);
+	//view.on('load', initLightbox, null);
+	view.on('load', function () { tb_init('a.thickbox') }, null);
 
-	this.view.load({
+	view.load({
 		  method: "GET",
 		  url: base + 'image/-/' + search.join('/') + '/',
 		  params: params,
