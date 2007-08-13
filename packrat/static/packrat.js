@@ -12,7 +12,7 @@ var image_search = function(id, search, params) {
 		);
 	thumbTemplate.compile();
 
-	var view = new Ext.JsonView(id, thumbTemplate, { jsonRoot: 'results' });
+	var view = new Ext.JsonView(id, thumbTemplate, { jsonRoot: 'results', multiSelect: true });
 
 
 	view.prepareData = function(p) {
@@ -32,11 +32,9 @@ var image_search = function(id, search, params) {
 
 	if (params == null)
 		params = {};
-	
-	params.format = 'json'
+       	params.format = 'json';
 
-	//view.on('load', initLightbox, null);
-	view.on('load', function () { tb_init('a.thickbox') }, null);
+	view.on('load', function () { tb_init('#'+id+' .thickbox'); }, null);
 
 	view.load({
 		  method: "GET",
