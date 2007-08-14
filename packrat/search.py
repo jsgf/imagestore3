@@ -57,7 +57,7 @@ del mktokre
 def tokenize(str):
     idx = 0
 
-    print 'tokenizing (%s)' % str
+    #print 'tokenizing (%s)' % str
     while idx <= len(str):
         m = tokre.match(str[idx:])
         if m is None:
@@ -400,9 +400,14 @@ class SearchParser(object):
     def parse(self, query):
         toks = tokenize(self.search)
 
-        def trace():
-            for t in toks:
-                print 'next: %s:%s' % t
-                yield t
+        next = toks.next
+        if 0:
+            def trace():
+                for t in toks:
+                    print 'next: %s:%s' % t
+                    yield t
 
-        return parse(query, trace().next(), trace().next)
+            next = trace().next
+
+        return parse(query, next(), next)
+            
