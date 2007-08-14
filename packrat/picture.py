@@ -830,6 +830,8 @@ class PictureFeed(AtomFeed):
     def links(self, ns):
         links = super(PictureFeed,self).links(ns)
 
+        assert self.mimetype is not None
+
         p = self.link_prev()
         if p:
             links.append(ns.link(rel="prev", type=self.mimetype, href=p))
@@ -868,9 +870,7 @@ class PictureFeed(AtomFeed):
 
     def get_order(self):
         default = self.order or '-created'
-        order = self.request.GET.get('order', default)
-
-        return order
+        return self.request.GET.get('order', default)
 
     def get_last_modified(self):
         res = self.results().order_by('-modified_time')
@@ -890,6 +890,7 @@ class PictureFeed(AtomFeed):
         return { 'totalResults': count,
                  'startIndex': start,
                  'itemsPerPage': limit,
+                 'order': self.get_order(),
                  'results': super(AtomFeed, self).render_json(*args, **kwargs) }
     
     def opensearch(self):
@@ -911,6 +912,8 @@ class PictureFeed(AtomFeed):
             'random': ('?', ),
             }
 
+        orders['default'] = orders['created']
+
         order = self.get_order()
 
         if order[0] == '-' and order[1:] in orders:
@@ -918,7 +921,7 @@ class PictureFeed(AtomFeed):
         elif order in orders:
             order = orders[order]
         else:
-            order = default
+            order = orders['default']
 
         if order[0] == '-?':
             order = [ '?' ]

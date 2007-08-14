@@ -34,6 +34,9 @@ class View(models.Model):
                 { 'user': self.owner.username,
                   'viewname': self.name })
 
+    def may_edit(self, authuser):
+        return self.owner == authuser
+
 def get_url_view(user, kwargs):
     id = kwargs.get('viewname', None)
     if id is None:
@@ -61,7 +64,7 @@ class ViewEntry(AtomEntry):
                                      body=html.blockquote(e.message))
 
     def jsonize(self):
-        ret = extract_attr(self.view, [ 'name', 'description', 'search', 'order', 'limit' ])
+        ret = extract_attr(self.view, [ 'id', 'name', 'description', 'search', 'order', 'limit' ])
         ret['url'] = self.view.get_absolute_url()
         return ret
 
@@ -76,8 +79,6 @@ class ViewEntry(AtomEntry):
 
         search = '%s/%s' % (v.search, self.search)
 
-        print 'effective search: %s' % search
-        
         return PictureFeed(search=search, order=order, limit=limit, proto=self)
 
     def _render_html(self, ns, *args, **kwargs):
@@ -92,6 +93,32 @@ class ViewEntry(AtomEntry):
 
     def render_atom(self, *args, **kwargs):
         return self.get_feed().render_atom(*args, **kwargs)
+
+    def do_POST(self, *args, **kwargs):
+        v = self.view
+        if not v.may_edit(self.authuser):
+            return HttpResponseForbidden('Cannot delete view "%s" for %s' % (v.name, self.urluser.username))
+        
+        POST = self.request.POST
+        
+        v.search = POST.get('search', v.search)
+        v.description = POST.get('description', v.description)
+        v.order = POST.get('order', v.order)
+        v.limit = POST.get('limit', v.limit)
+        v.name = POST.get('viewname', v.name)
+
+        v.save()
+
+        return HttpResponseRedirect(v.get_absolute_url())
+        
+    def do_DELETE(self, *args, **kwargs):
+        v = self.view
+        if not v.may_edit(self.authuser):
+            return HttpResponseForbidden('Cannot delete view "%s" for %s' % (v.name, self.urluser.username))
+
+        v.delete()
+        return HttpResponseRedirect(self.authuser.get_profile().get_view_url())
+    
 
 class ViewList(AtomFeed):
     def urlparams(self, kwargs):

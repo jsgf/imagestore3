@@ -49,13 +49,6 @@ class RestBase(object):
 
         self.default_formats = ('xhtml', 'html')
 
-        if proto is not None:
-            # If we're being created as a subordinate view to an
-            # actual requested one, then copy some stuff across
-            self.request = proto.request
-            self.authuser = proto.authuser
-            self.determine_format(proto.format)
-        
         for k,v,s in [ ('xml',          'application/xml',        serialize_xml),
                        ('html',         'text/html',              serialize_xml),
                        ('text',         'text/plain',             serialize_ident),
@@ -66,6 +59,13 @@ class RestBase(object):
                        ('binary',       'application/binary',     serialize_ident),
                        ]:
             self.add_type(k, v, s)
+
+        if proto is not None:
+            # If we're being created as a subordinate view to an
+            # actual requested one, then copy some stuff across
+            self.request = proto.request
+            self.authuser = proto.authuser
+            self.determine_format(proto.format)
 
     def add_type(self, k, v, ser):
         #print 'adding type (%s, %s)' % (k,v)
