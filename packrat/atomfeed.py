@@ -14,14 +14,8 @@ class AtomFeed(restlist.List):
     def __init__(self, *args, **kwargs):
         super(AtomFeed, self).__init__(*args, **kwargs)
 
-    def title(self, ns):
-        return ''
-
     def subtitle(self):
         return ''
-    
-    def entries(self):
-        return []
 
     def opensearch(self):
         return None

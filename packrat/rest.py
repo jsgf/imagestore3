@@ -295,7 +295,9 @@ class RestBase(object):
         method = getattr(self, 'do_%s' % request.method)
 
         try:
-            self.urlparams(kwargs)
+            resp = self.urlparams(kwargs)
+            if resp is not None:
+                return resp
         except ObjectDoesNotExist, e:
             return HttpResponseNotFound(e.message)
 

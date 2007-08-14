@@ -47,6 +47,9 @@ class UserProfile(models.Model):
     def get_search_url(self, search):
         return self.get_image_url() + '-/%s' % search
 
+    def get_view_url(self):
+        return self.get_absolute_url() + 'view/'
+
     def get_camera_url(self):
         return self.get_absolute_url() + 'camera/'
 
@@ -214,6 +217,7 @@ urlpatterns = patterns('',
                        ('^(?P<user>[^/]+)/$',           user),
                        ('^(?P<user>[^/]+)/image/',      include('packrat.picture')),
                        ('^(?P<user>[^/]+)/camera/',     include('packrat.camera')),
+                       ('^(?P<user>[^/]+)/view/',       include('packrat.view')),
                        ('^(?P<user>[^/]+)/tag/$',       'packrat.tag.usertaglist'),
                        ('^(?P<user>[^/]+)/tag/(?P<tagpart>[a-zA-Z0-9_ -]+)/$',       'packrat.tag.usertagcomplete'),
                        )

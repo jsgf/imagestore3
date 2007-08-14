@@ -28,7 +28,7 @@ from . import EXIF, image, microformat, restlist
 from .atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
 from .namespace import atom, imst, html, xhtml, opensearch, timeline
 from .daterange import daterange
-from .search import SearchParser
+from .search import SearchParser, ParseException
 from .json import extract_attr
 
 __all__ = [ 'Picture' ]
@@ -750,17 +750,34 @@ class PictureImage(RestBase):
                                       (p.id, size, image.extension))
 
         return ret
-        
-class PictureFeed(AtomFeed):
-    __slots__ = [ 'urluser', '_query', 'search' ]
 
-    def __init__(self, search=None):
-        super(PictureFeed, self).__init__()
+def get_url_search(request, kwargs):
+    search = ''
+    
+    if 'search' in kwargs and kwargs['search']:
+        search += kwargs['search']
+
+    if 'q' in request.GET:
+        search += request.GET['q']
+
+    search = search.strip('+ /')
+
+    SearchParser(search).parse(Picture.objects)
+
+    return search
+    
+class PictureFeed(AtomFeed):
+    __slots__ = [ 'urluser', '_query', 'search', 'order', 'limit' ]
+
+    def __init__(self, search=None, order=None, limit=None, *args, **kwargs):
+        super(PictureFeed, self).__init__(*args, **kwargs)
 
         self.urluser = None
 
         self.search = search
         self.query = None
+        self.order = order
+        self.limit = limit
         
         self._query = None
         self.add_type('timeline', 'application/xml', serialize_xml)
@@ -775,12 +792,12 @@ class PictureFeed(AtomFeed):
     def get_absolute_url(self):
         if self.search:
             return ('packrat.picture.picturesearch',
-                    [ self.urluser, self.search ],
-                    { 'search': self.search + '/', 'urluser': self.urluser })
+                    [ self.urluser and self.urluser.username, self.search ],
+                    { 'search': self.search + '/', 'urluser': self.urluser and self.urluser.username })
         else:
             return ('packrat.picture.picturefeed',
-                    [ self.urluser ],
-                    { 'urluser': self.urluser })
+                    [ self.urluser and self.urluser.username ],
+                    { 'urluser': self.urluser and self.urluser.username })
 
     def get_search_url(self, search):
         if not self.search:
@@ -794,18 +811,12 @@ class PictureFeed(AtomFeed):
 
         self.urluser = get_url_user(kwargs)
 
-        search = ''
-
-        if 'search' in kwargs:
-            search += kwargs['search']
-
-        if 'q' in self.request.GET:
-            search += self.request.GET['q']
-
-        search = search.strip('+ /')
-
-        if search:
-            self.search = search
+        try:
+            self.search = get_url_search(self.request, kwargs)
+        except ParseException, e:
+            return self.render_error(error=400,  # bad request
+                                     title='Error parsing search query',
+                                     body=html.blockquote(e.message))
 
     def filter(self, query):
         if self.urluser is not None:
@@ -814,7 +825,6 @@ class PictureFeed(AtomFeed):
 
         if self.search:
             query = SearchParser(self.search).parse(query)
-
         return query
 
     def links(self, ns):
@@ -842,7 +852,7 @@ class PictureFeed(AtomFeed):
 
     def limits(self):
         start = 0
-        limit = 50
+        limit = self.limit or 50
         try:
             limit = int(self.request.GET.get('limit', str(limit)))
             limit = min(limit, 200)
@@ -855,6 +865,12 @@ class PictureFeed(AtomFeed):
             pass
         
         return (start,limit)
+
+    def get_order(self):
+        default = self.order or '-created'
+        order = self.request.GET.get('order', default)
+
+        return order
 
     def get_last_modified(self):
         res = self.results().order_by('-modified_time')
@@ -895,8 +911,7 @@ class PictureFeed(AtomFeed):
             'random': ('?', ),
             }
 
-        default = '-created'
-        order = self.request.GET.get('order', default)
+        order = self.get_order()
 
         if order[0] == '-' and order[1:] in orders:
             order = [ '-' + o for o in orders[order[1:]] ]
@@ -944,10 +959,19 @@ class PictureFeed(AtomFeed):
         if not self.search:
             upload = pic_upload_form(self.authuser, self.urluser, ns)
         search = ns.form({'action': '', 'method': 'GET'},
-                         ns.label('Search: ', ns.input(name='q', type='text')),
-                         ns.input(type='submit', value='Search'))
-        
-        return ns.div(nav, upload, search,
+                         ns.label('Search: ', ns.input(name='q', type='text')))
+
+        save_view = []
+        if self.authuser and self.search:
+            save_view = ns.form({'action': self.authuser.get_profile().get_view_url(),
+                                 'method': 'POST'},
+                                ns.input(type='hidden', name='search', value=self.search),
+                                ns.input(type='hidden', name='limit', value=str(limit)),
+                                ns.input(type='hidden', name='order', value=self.get_order()),
+                                ns.label('Save search in view: ', ns.input(type='text', name='viewname')),
+                                ns.input(type='submit', value='Save view'))
+
+        return ns.div(nav, upload, search, save_view,
                       ns.ul([ ns.li(e._render_html(ns, *args, **kwargs))
                               for e in self.generate() ]))
 

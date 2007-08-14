@@ -5,6 +5,7 @@ from .media import Media, MediaChunk
 from .tag import Tag
 from .camera import Camera, CameraTags
 from .user import User, UserProfile
+from .view import View
 
 #Hack to deal with stale cache(?) issue
 for c in [ Picture, Tag, Camera, CameraTags, User, UserProfile ]:
