@@ -90,7 +90,9 @@ class UserList(restlist.List):
                                ns.label('Logout: ', ns.input(type='submit'))))
             
         ret.append(ns.ul({ 'class': 'users' },
-                         [ ns.li(microformat.hcard(u.urluser, ns=ns)) for u in self.entries() ]))
+                         [ ns.li({ 'id': u.urluser.username },
+                                 microformat.hcard(u.urluser, ns=ns))
+                           for u in self.entries() ]))
         return ret
 
     @permalink

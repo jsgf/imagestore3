@@ -6,7 +6,8 @@ from django.contrib.auth.models import User
 from django.conf.urls.defaults import patterns, include
 from django.http import HttpResponseForbidden, HttpResponseRedirect
 
-from .rest import HttpResponseBadRequest, HttpResponseConflict
+from .rest import (HttpResponseBadRequest, HttpResponseConflict,
+                   serialize_xml, serialize_json)
 from .atomfeed import AtomFeed, AtomEntry
 from .user import get_url_user
 from .namespace import html
@@ -44,27 +45,25 @@ def get_url_view(user, kwargs):
 
     return View.objects.get(owner = user, name = id)
 
-class ViewEntry(AtomEntry):
-    __slots__ = [ 'view', 'urluser', 'search' ]
+class ViewEntry(PictureFeed):
+    __slots__ = [ 'view' ]
     
     def __init__(self, view=None, *args, **kwargs):
         super(ViewEntry, self).__init__(*args, **kwargs)
         if view is not None:
             self.view = view
-        self.search = ''
-        
+
     def urlparams(self, kwargs):
-        self.urluser = get_url_user(kwargs)
+        super(ViewEntry,self).urlparams(kwargs)
         self.view = get_url_view(self.urluser, kwargs)
-        try:
-            self.search = get_url_search(self.request, kwargs)
-        except ParseException, e:
-            return self.render_error(error=400,  # bad request
-                                     title='Error parsing search query',
-                                     body=html.blockquote(e.message))
+
+        self.search = self.view.search
+        self.limit = self.view.limit
+        self.order = self.view.order
 
     def jsonize(self):
-        ret = extract_attr(self.view, [ 'id', 'name', 'description', 'search', 'order', 'limit' ])
+        ret = extract_attr(self.view, [ 'id', 'name', 'description', 'search',
+                                        'order', 'limit' ])
         ret['url'] = self.view.get_absolute_url()
         return ret
 
@@ -81,18 +80,10 @@ class ViewEntry(AtomEntry):
 
         return PictureFeed(search=search, order=order, limit=limit, proto=self)
 
-    def _render_html(self, ns, *args, **kwargs):
-        return self.get_feed()._render_html(ns, *args, **kwargs)
-
     def render_summary(self, ns, *args, **kwargs):
         v = self.view
-        return ns.span(ns.a(v.name, href=v.get_absolute_url()), ' - %s' % (v.description or v.search))
-
-    def render_json(self, *args, **kwargs):
-        return self.get_feed().render_json(*args, **kwargs)
-
-    def render_atom(self, *args, **kwargs):
-        return self.get_feed().render_atom(*args, **kwargs)
+        return ns.span({ 'id': v.name },
+                       ns.a(v.name, href=v.get_absolute_url()), ' - %s' % (v.description or v.search))
 
     def do_POST(self, *args, **kwargs):
         v = self.view

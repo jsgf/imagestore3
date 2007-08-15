@@ -22,10 +22,11 @@ from .tag import Tag, TagField
 from .rest import (RestBase, HttpResponseBadRequest,
                    HttpResponseConflict, HttpResponseBadRequest,
                    HttpResponseContinue, HttpResponseExpectationFailed,
-                   serialize_xml, serialize_ident)
+                   serialize_xml, serialize_ident, serialize_json)
 from . import EXIF, image, microformat, restlist
 
 from .atomfeed import AtomFeed, AtomEntry, atomtime, atomperson
+from .restlist import Entry
 from .namespace import atom, imst, html, xhtml, opensearch, timeline
 from .daterange import daterange
 from .search import SearchParser, ParseException
@@ -781,6 +782,7 @@ class PictureFeed(AtomFeed):
         
         self._query = None
         self.add_type('timeline', 'application/xml', serialize_xml)
+        self.add_type('calendar', 'application/javascript', serialize_json)
 
     def title(self, ns):
         if self.search:
@@ -882,6 +884,35 @@ class PictureFeed(AtomFeed):
         if 'q' in self.request.GET:
             return HttpResponseRedirect(self.append_url_params(self.get_absolute_url(), remove='q'))
         return super(PictureFeed,self).do_GET(*args, **kwargs)
+
+    def render_calendar(self, *args, **kwargs):
+        query = self.results()
+        
+        def count_days(m):
+            dr = daterange(m, period='month')
+            ret = {}
+            for d in query.filter(created_time__range=(dr.start, dr.end)).dates('created_time', 'day'):
+                day = daterange(d, period='day')
+                tags = Tag.objects.filter(picture__created_time__range = (day.start, day.end)).distinct()
+                count = query.filter(created_time__range = (day.start, day.end)).count()
+                
+                ret[d.day] = {'count': count, 'tags': tags }
+
+            return ret
+        
+        def count_months(y):
+            dr = daterange(y, period='year')
+            ret = {}
+            for m in query.filter(created_time__range=(dr.start, dr.end)).dates('created_time', 'month'):
+                ret[m.month] = count_days(m)
+
+            return ret
+        
+        ret = {}
+        for y in query.dates('created_time', 'year'):
+            ret[y.year] = count_months(y)
+
+        return ret        
 
     def render_json(self, *args, **kwargs):
         count = self.results().count()
@@ -988,7 +1019,7 @@ class PictureFeed(AtomFeed):
             return s.getvalue()
         tl = timeline.data()
         
-        res = self.results('created_time')
+        res = self.results(('created_time', ))
 
         prev = None
         evt = None

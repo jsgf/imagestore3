@@ -157,7 +157,7 @@ class CameraEntry(restlist.Entry):
         u = c.owner
         up = c.owner.get_profile()
         
-        return ns.div({'class': 'camera' },
+        return ns.div({'class': 'camera', 'id': c.nickname },
                       ns.h2(ns.a({'class': 'nickname',
                                   'href': self.append_url_params(c.get_absolute_url()) },
                                  c.nickname), ' - ',
