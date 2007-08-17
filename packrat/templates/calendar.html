@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block pagescript %}
+      var year = {{ year|default_if_none:"null" }};
+      var month = {{ month|default_if_none:"null" }};
+      var day = {{ day|default_if_none:"null" }};
+
+      var date = "{{ date }}";
+      var period = "{{ period }}";
+
+      var search = "{{ search|default_if_none:"" }}";
+{% endblock %}
+
+{% block inlinescript %}
+      displayCalendar('results', year, month, day, period, search);
+{% endblock %}
+
+{% block pageid %}id="calendar"{% endblock %}
+
+{% block title %}Calendar{% endblock %}
+
+{% block main %}
+      <div class="calendar" id="results"></div>
+{% endblock %}

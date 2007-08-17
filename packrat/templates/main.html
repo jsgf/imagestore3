@@ -3,7 +3,7 @@
 {% block inlinescript %}
       image_search('results', [ 'vis:public', 'created:>=(today)-3month' ], { limit: 32, order: 'random' });
 {% endblock %}
-{% block maintitle %}Recent pictures{% endblock %}
+{% block maintitle %}{% endblock %}
 {% block main %}
-      <ul class="search-results horiz" id="results"></ul>
+      <ul class="slideshow search-results horiz" id="results"></ul>
 {% endblock main %}

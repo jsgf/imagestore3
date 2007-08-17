@@ -4,29 +4,34 @@
     <title>{% block title %}Packrat{% endblock %}</title>
     <link rel="stylesheet" type="text/css" href="{% url packrat.urls.static path="style.css" %}" />
 
-    <script type="text/javascript">window.packrat_base="{% url packrat.urls.index %}";</script>
-    <script type="text/javascript">window.packrat_static="{% url packrat.urls.static path="./" %}";</script>
-
     <script type="text/javascript" src="{% url packrat.urls.static path="jquery-1.1.3.1.js" %}"></script>
+    <script type="text/javascript" src="{% url packrat.urls.static path="jquery-dom.js" %}"></script>
 
+<!--
     <script type="text/javascript" src="{% url packrat.urls.static path="ext-1.1/adapter/jquery/jquery-plugins.js" %}"></script>
     <script type="text/javascript" src="{% url packrat.urls.static path="ext-1.1/adapter/jquery/ext-jquery-adapter.js" %}"></script>
     <script type="text/javascript" src="{% url packrat.urls.static path="ext-1.1/ext-all-debug.js" %}"></script>
     <link rel="stylesheet" type="text/css" href="{% url packrat.urls.static path="ext-1.1/resources/css/xtheme-vista.css" %}" />
+-->
+
+    <script type="text/javascript" src="{% url packrat.urls.static path="packrat.js" %}"></script>
 
     <script type="text/javascript" src="{% url packrat.urls.static path="thickbox.js" %}"></script>
     <link rel="stylesheet" href="{% url packrat.urls.static path="thickbox.css" %}" type="text/css" media="screen" />
 
-    {% block scripts %}<script type="text/javascript" src="{% url packrat.urls.static path="packrat.js" %}"></script>{% endblock %}
+
+    {% block scripts %}{% endblock %}
     <script type="text/javascript">
-      <!--
+      var packrat = packrat_init('{% url packrat.urls.index %}',
+				 '{% url packrat.urls.static path="./" %}');
+
+      {% block pagescript %}{% endblock %}
       $(document).ready(function () {
       {% block inlinescript %}{% endblock %}
       });
-      -->
     </script>
   </head>
-    <body>
+    <body {% block pageid %}id="base"{% endblock %}>
       <div id="sidebar">
 	{% block sidebar %}
 	<ul>
