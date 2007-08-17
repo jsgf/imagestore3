@@ -3,3 +3,5 @@ other
 *.pyc
 *.pyo
 *~
+*.rej
+*.orig
