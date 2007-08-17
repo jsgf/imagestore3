@@ -893,10 +893,9 @@ class PictureFeed(AtomFeed):
             ret = {}
             for d in query.filter(created_time__range=(dr.start, dr.end)).dates('created_time', 'day'):
                 day = daterange(d, period='day')
-                tags = Tag.objects.filter(picture__created_time__range = (day.start, day.end)).distinct()
                 count = query.filter(created_time__range = (day.start, day.end)).count()
                 
-                ret[d.day] = {'count': count, 'tags': tags }
+                ret[d.day] = {'count': count }
 
             return ret
         
