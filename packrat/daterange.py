@@ -30,9 +30,8 @@ def dateadd(d, year=0, month=0, day=0, week=0):
 def weekstart(d):
     return datetime.fromordinal(d.toordinal() - calendar.weekday(d.year, d.month, d.day))
 
-
 def roundup(period, dt):
-    return rounddown(period, dateadd(dt, **{period: 1}))
+    return rounddown(period, dateadd(dt, **{period: 1}) - timedelta(0,0,1))
 
 def rounddown(period, dt):
     dt = dt.replace(hour=0, minute=0, second=0)
@@ -95,7 +94,7 @@ class daterange(object):
         assert isinstance(start, datetime)
 
         if end is None:
-            end = start
+            end = dateadd(start, day=1)
         elif end == 'today':
             end = date.today()
             if period is None:
