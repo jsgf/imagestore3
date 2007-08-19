@@ -15,7 +15,7 @@ $.defineTag = function( tag ) {
 		'h1', 'h2', 'h3', 'hr', 'img', 'input', 'label', 'legend',
 		'li', 'ol', 'optgroup', 'option', 'p', 'pre', 'select',
 		'span', 'strong', 'table', 'tbody', 'td', 'textarea',
-		'tfoot', 'th', 'thead', 'tr', 'tt', 'ul' ];
+		'tfoot', 'th', 'thead', 'tr', 'tt', 'ul', 'dl', 'dd', 'dt' ];
 	for( var i = tags.length - 1;  i >= 0;  i-- ) {
 		$.defineTag( tags[i] );
 	}
