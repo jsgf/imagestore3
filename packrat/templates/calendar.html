@@ -12,13 +12,13 @@
 {% endblock %}
 
 {% block inlinescript %}
-      displayCalendar('results', year, month, day, period, search);
+      displayCalendar('#calendar', year, month, day, period, search);
 {% endblock %}
 
-{% block pageid %}id="calendar"{% endblock %}
+{% block pageid %}id="calendar-page"{% endblock %}
 
 {% block title %}Calendar{% endblock %}
 
 {% block main %}
-      <div class="calendar" id="results"></div>
+      <div class="calendar" id="calendar"></div>
 {% endblock %}

@@ -3,9 +3,16 @@ body {
   color: #eee;
 
   margin-left: 11em;
+  margin-bottom: 5em;
 
   font-family: bitstream vera sans, verdana, arial, helvetica, sans-serif;
 }
+
+A		{ text-decoration: none; }
+A:link		{ color: #ddd; }
+A:visited	{ color: #ddd; }
+A:hover		{ color: #ffa66b; }
+A:active	{ color: #ffa66b; }
 
 #sidebar { 
   position: fixed;
@@ -39,4 +46,50 @@ ul.horiz > li {
 .thumb img { 
   border: 0;
   margin: 2px;
+}
+
+#calendar .year-overview {
+  margin-top: .5em;
+  padding-top: .3em;
+  border-top: 5px solid;
+}
+
+#calendar .month-overview { 
+  margin-left: 2em;
+}
+
+#calendar .month-overview h3 { 
+  border-top: 1px solid #aaa;
+  margin-top: .2em;
+}
+
+#calendar table.calendar-grid td { 
+  width: 100px;
+  height: 100px;
+  padding: 0px;
+  border: 0;
+
+  font-size: 40px;
+  text-align: right;
+  vertical-align: bottom;
+}
+
+#calendar table.calendar-grid td .number { 
+  opacity: .7;
+}
+
+#calendar table.calendar-grid td.pictures .number { 
+  opacity: .9;
+  font-weight: bold;
+}
+
+#calendar table.calendar-grid td.day { 
+  background-color: #777;
+}
+#calendar table.calendar-grid td.day.Sunday { 
+  background-color: #887;
+}
+
+#calendar table.calendar-grid td.pictures { 
+  background-color: #999;
 }

@@ -6,6 +6,9 @@ def index(request):
     return render_to_response('slideshow.html')
 
 def calendar(request, *args, **kwargs):
+    for k in ( 'year', 'month', 'day', 'period'):
+        kwargs[k] = kwargs.get(k, None)
+    
     date = [ x for x in [ kwargs.get(k, None)
                           for k in ('year', 'month', 'day') ]
              if x is not None ]
@@ -14,8 +17,11 @@ def calendar(request, *args, **kwargs):
         kwargs['period'] = [ '', 'year', 'month', 'day' ] [ len(date) ]
     return render_to_response('calendar.html', kwargs)
 
+cal_overview = calendar
+
 urlpatterns = patterns('packrat.ui',
-                       ('^$',            'index'),
+                       ('^$',           'index'),
+                       (r'^calendar/',  'cal_overview'),
                        (r'^calendar/'
                                 r'(?:(?P<period>day|week|month|year)/)?'
                                 r'(?:(?P<year>[0-9]{4})/'

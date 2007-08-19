@@ -810,6 +810,7 @@ class PictureFeed(AtomFeed):
 
     def urlparams(self, kwargs):
         from .user import get_url_user
+        self._query = None
 
         self.urluser = get_url_user(kwargs)
 

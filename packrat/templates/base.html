@@ -7,6 +7,9 @@
     <script type="text/javascript" src="{% url packrat.urls.static path="jquery-1.1.3.1.js" %}"></script>
     <script type="text/javascript" src="{% url packrat.urls.static path="jquery-dom.js" %}"></script>
 
+    <script type="text/javascript" src="{% url packrat.urls.static path="jquery.behavior.js" %}"></script>
+    <script type="text/javascript" src="{% url packrat.urls.static path="ext-Date.js" %}"></script>
+
 <!--
     <script type="text/javascript" src="{% url packrat.urls.static path="ext-1.1/adapter/jquery/jquery-plugins.js" %}"></script>
     <script type="text/javascript" src="{% url packrat.urls.static path="ext-1.1/adapter/jquery/ext-jquery-adapter.js" %}"></script>
@@ -22,8 +25,15 @@
 
     {% block scripts %}{% endblock %}
     <script type="text/javascript">
-      var packrat = packrat_init('{% url packrat.urls.index %}',
-				 '{% url packrat.urls.static path="./" %}');
+      packrat.base = '{% url packrat.urls.index %}';
+      packrat.searchbase = packrat.base + 'image/-/';
+      packrat.static = '{% url packrat.urls.static path="./" %}';
+
+      // set up thickbox
+      tb_pathToImage = packrat.static + tb_pathToImage;
+
+      // make sure thickbox keeps track of dynamic additions
+      $('.thickbox').behavior(function() { tb_init(this); });
 
       {% block pagescript %}{% endblock %}
       $(document).ready(function () {
@@ -35,7 +45,14 @@
       <div id="sidebar">
 	{% block sidebar %}
 	<ul>
-	  <li>...</li>
+	  <li>
+	    <div id="nav">
+	      <div id="prev"></div>
+	      <div id="next"></div>
+	    </div>
+	  </li>
+	  <li><a href="{% url packrat.ui.index %}">Overview</a></li>
+	  <li><a href="{% url packrat.ui.cal_overview %}">Calendar</a></li>
 	</ul>
 	{% endblock %}
       </div>
