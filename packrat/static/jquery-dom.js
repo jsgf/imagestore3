@@ -26,33 +26,33 @@ $.NBSP = '\u00a0';
 $._createNode = function( tag, args ) {
 	var fix = { 'class':'className', 'Class':'className' };
 	var e;
-	try {
-		var attrs = args[0] || {};
-		e = document.createElement( tag );
-		for( var attr in attrs ) {
-			var a = fix[attr] || attr;
+
+	var attrs = args[0] || {};
+	e = document.createElement( tag );
+	for( var attr in attrs ) {
+		var a = fix[attr] || attr;
+
+		if (attr == 'style') {
+			var styles = attrs[attr]
+			for (var s in styles)
+				e.style[s] = styles[s];
+		} else
 			e[a] = attrs[attr];
-		}
-		for( var i = 1;  i < args.length;  i++ ) {
-			var arg = args[i];
-			if( arg == null ) continue;
-			if( arg.constructor != Array ) append( arg );
-			else for( var j = 0;  j < arg.length;  j++ )
-				append( arg[j] );
-		}
 	}
-	catch( ex ) {
-		alert( 'Cannot create <' + tag + '> element:\n' +
-			args.toSource() + '\n' + args );
-		e = null;
+	for( var i = 1;  i < args.length;  i++ ) {
+		var arg = args[i];
+		if( arg == null ) continue;
+		if( arg.constructor != Array ) append( arg );
+		else for( var j = 0;  j < arg.length;  j++ )
+			append( arg[j] );
 	}
 	
 	function append( arg ) {
 		if( arg == null ) return;
 		var c = arg.constructor;
 		switch( typeof arg ) {
-			case 'number': arg = '' + arg;  // fall through
-			case 'string': arg = document.createTextNode( arg );
+		case 'number': arg = '' + arg;  // fall through
+		case 'string': arg = document.createTextNode( arg );
 		}
 		e.appendChild( arg );
 	}
