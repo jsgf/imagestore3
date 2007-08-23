@@ -32,7 +32,8 @@ var packrat = function() {
 	    render = function(el, data) {
 		el.empty();
 
-		for each (var img in data.results) {
+		for (var idx in data.results) {
+		    var img = data.results[idx];
 		    el.append($.LI({ Class: 'image', id: 'img'+img.id },
 				   this.thumb_template(img)));
 		}
@@ -65,12 +66,14 @@ packrat.calendar = function () {
 	return a;
     }
 
-    overview = function(el) {
+    var overview = function(el) {
 	var get_counts = function(year) {
 	    var count = 0;
 
-	    for each (var m in year) {
-		for each (var d in m) {
+	    for (var midx in year) {
+		var m = year[midx];
+		for (var didx in m) {
+		    var d = m[didx];
 		    count += d.count;
 		}
 	    }
@@ -111,9 +114,12 @@ packrat.calendar = function () {
 	};
 
 	var result_render = function(el, data) {
+	    var p = sortprops(data);
+
 	    el.empty().hide();
 
-	    for each (var year in sortprops(data)) {
+	    for (var yearidx in p) {
+		var year = p[yearidx];
 		el.append(make_yeardiv(data, year));
 	    }
 
@@ -127,24 +133,30 @@ packrat.calendar = function () {
 	var get_counts = function(month) {
 	    var count = 0;
 
-	    for each (var d in month) {
+	    for (var didx in month) {
+		var d = month[didx];
 		count += d.count;
 	    }
 	    return count;
 	}
 
 	var div = $($.DIV({Class: 'month-overview'}));
-	for each (var m in sortprops(months)) {
+	var p = sortprops(months);
+	for (var midx in p) {
+	    var m = p[midx];
 	    (function (m) {
 		var title, content, sampler;
 		var id = 'month_'+year+'_'+m;
+		var mdiv = $($.DIV({ id: id }));
 
-		div.append($.H3({ id: id },
+		mdiv.append($.H3({ },
 				title = $.A({ href: "#"+id }, Date.monthNames[m-1]),
 				': '+get_counts(months[m])));
 
-		div.append(sampler = $.DIV({ Class: 'sampler' }));
-		div.append(content = $.DIV({ Class: 'month' }));
+		mdiv.append(sampler = $.DIV({ Class: 'sampler' }));
+		mdiv.append(content = $.DIV({ Class: 'month' }));
+
+		div.append(mdiv);
 
 		sampler = $(sampler);
 		content = $(content);
@@ -157,7 +169,7 @@ packrat.calendar = function () {
 
 		$(title).toggle(function () {
 				    sampler.disappear();
-				    daysview(content, year, m, months[m]);
+				    monthview(content, year, m, months[m]);
 				    return false;
 				},
 				function () {
@@ -175,9 +187,7 @@ packrat.calendar = function () {
 	el.reveal();
     }
 
-    var daysview = function(el, year, month, days) {
-	el = $(el);
-
+    var generate_cal_grid = function (year, month, callback) {
 	var d = new Date(year, month-1);
 
 	var make_week = function() {
@@ -194,8 +204,10 @@ packrat.calendar = function () {
 
 	var add_week = function(cal, week) {
 	    var row = $($.TR({}));
-	    for each (var day in week)
-	    row.append(day);
+	    for (var dayidx in week) {
+		var day = week[dayidx];
+		row.append(day);
+	    }
 	    cal.append(row);
 	};
 
@@ -213,19 +225,36 @@ packrat.calendar = function () {
 	    dow_td.addClass('day');
 	    dow_td.addClass(Date.dayNames[dow]);
 
-	    if (days[i] && days[i].count > 0) {
-		dow_td.addClass('pictures');
-		packrat.image_search(dow_td,
-				     'created:'+year+'-'+month+'-'+i,
-				     { order: 'random' },
-				     function (el, data) {
-					 el.css('background-image', 'url('+data.results[0].sizes.stamp.url+');');
-				     });
-	    }
+	    if (callback)
+		callback(dow_td, year, month, i);
 	}
 
 	add_week(cal, week);
 
+	return cal;
+    }	
+
+    var monthview = function(el, year, month, days) {
+	el = $(el);
+
+	var set_thumb = function(el, y, m, d) {
+	    if (!days[d] || !days[d].count)
+		return;
+
+	    el.addClass('pictures');
+	    packrat.image_search(el,
+				 'created:'+y+'-'+m+'-'+d,
+				 { order: 'random', limit: 1 },
+				 function (el, data) {
+				     var img = data.results[0].sizes.stamp;
+
+				     el.css('background-image', 'url('+img.url+');');
+				 });
+	};
+
+	var cal = generate_cal_grid(year, month, set_thumb);
+
+	el.hide();
 	el.empty().append(cal);
 	el.reveal();
     }
@@ -233,7 +262,7 @@ packrat.calendar = function () {
     return {
 	overview: overview,
 	yearview: yearview,
-	monthview: null,
+	monthview: monthview,
     };
 }();
 
@@ -244,14 +273,17 @@ jQuery.fn.extend({
 	    var el = this;
 	    // embellishments: add "loading" spinning; error indication, etc...
 	    jQuery.getIfModified(url, params, function (data) { render(el, data); }, 'json');
+	    return this;
 	},
 
     reveal: function() {
 	    this.slideDown('slow');
+	    return this;
 	},
 
     disappear: function() {
 	    this.slideUp('slow');
+	    return this;
 	}
     });
 

@@ -90,6 +90,9 @@ ul.horiz > li {
   background-color: #887;
 }
 
-#calendar table.calendar-grid td.pictures { 
+#calendar table.calendar-grid td.pictures {
   background-color: #999;
+}
+#calendar table.calendar-grid td.day.Sunday.pictures {
+  background-color: #aa9;
 }
