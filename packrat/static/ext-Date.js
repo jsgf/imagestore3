@@ -6,6 +6,11 @@
  * http://www.extjs.com/license
  */
 
+// Ext
+String.escape = function(string) {
+    return string.replace(/('|\\)/g, "\\$1");
+    };
+
 /**
  * @class Date
  *
