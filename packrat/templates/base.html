@@ -28,12 +28,14 @@
       packrat.base = '{% url packrat.urls.index %}';
       packrat.searchbase = packrat.base + 'image/-/';
       packrat.static = '{% url packrat.urls.static path="./" %}';
+      packrat.ui_url = '{% url packrat.ui.index %}';
+      packrat.calendar_url = '{% url packrat.ui.calendar %}';
 
       // set up thickbox
       tb_pathToImage = packrat.static + tb_pathToImage;
 
       // make sure thickbox keeps track of dynamic additions
-      $('.thickbox').behavior(function() { tb_init(this); });
+      //$('.thickbox').behavior(function() { tb_init(this); });
 
       {% block pagescript %}{% endblock %}
       $(document).ready(function () {

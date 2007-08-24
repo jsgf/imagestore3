@@ -32,6 +32,10 @@ A:active	{ color: #ffa66b; }
   background-color: #444;
 }
 
+#sidebar ul > li { 
+  list-style-type: none;
+}
+
 ul.horiz { 
   margin: 0;
   padding: 0;
@@ -96,3 +100,18 @@ ul.horiz > li {
 #calendar table.calendar-grid td.day.Sunday.pictures {
   background-color: #aa9;
 }
+
+#calendar .date { 
+  border-top: 1px solid #aaa;
+  margin-top: 1em;
+}
+
+#calendar .date ul { 
+  margin-left: 1em;
+}
+
+ul.horiz.tags > li {
+  margin-right: 1em;
+  font-size: 75%;
+}
+

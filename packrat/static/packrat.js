@@ -4,7 +4,7 @@ var packrat = function() {
     var sampler_elem_width = 100+4;
 
     // template for a thumbnail linked to a thickbox view
-    this.thumb_template = function(img) {
+    var thumb_template = function(img) {
 	var th = img.sizes.stamp;
 	var p = img.sizes.small;
 
@@ -14,17 +14,32 @@ var packrat = function() {
 					src: th.url, title: img.title })));
     };
 
-    // simple ungrouped search results
-    var image_search = function(el, search, params, render) {
+    var search_date = function(year, month, day) {
+	var search = '' + year;
+	if (month) {
+	    search += '-' + month;
+	    if (day)
+		search += '-' + day;
+	}
+
+	return search;
+    }
+
+    var image_search_url = function(search) {
 	if (!(search instanceof Array ))
 	    search = [ search ];
 
+	return packrat.searchbase + search.join('/') + '/';
+    };
+
+    // simple ungrouped search results
+    var image_search = function(el, search, params, render) {
 	if (params == null)
 	    params = {};
+
 	params.format = 'json';
 
-	$(el).jsonupdate(packrat.searchbase + search.join('/') + '/',
-			 params, render);
+	$(el).jsonupdate(image_search_url(search), params, render);
     };
 
     var sampler = function(el, search, number, render) {
@@ -35,8 +50,10 @@ var packrat = function() {
 		for (var idx in data.results) {
 		    var img = data.results[idx];
 		    el.append($.LI({ Class: 'image', id: 'img'+img.id },
-				   this.thumb_template(img)));
+				   thumb_template(img)));
 		}
+
+		tb_init($('.thickbox', this));
 	    };
 	}
 	var ul = $.UL({ Class: 'horiz' });
@@ -50,8 +67,11 @@ var packrat = function() {
     }
 
     return {
+	search_date: search_date,
 	image_search: image_search,
+	image_search_url: image_search_url,
 	sampler: sampler,
+	thumb_template: thumb_template,
     }
 }();
 
@@ -64,6 +84,83 @@ packrat.calendar = function () {
 
 	return a.sort(function (a,b) { return a - b; });
 	return a;
+    }
+
+    var calendar_url = function(year, month, day) {
+	var url = packrat.calendar_url;
+
+	if (year) {
+	    url += year + '/';
+	    if (month) {
+		url += month + '/';
+		if (day)
+		    url += day + '/';
+	    }
+	}
+
+	return url;
+    }
+
+    var daybyday = function(el, year, month, day, search, start) {
+	var result_render = function(el, data) {
+	    // XXX set up nav links
+	    var prevdate = null;
+	    var ul;
+	    var tags;
+	    var tagset;
+
+	    el.empty();
+
+	    for (var idx in data.results) {
+		var img = data.results[idx];
+		var dt = img.created_time.split('T');
+		var d = dt[0].split('-');
+		var date = new Date(d[0], d[1], d[2]);
+
+		if (!prevdate || d > prevdate) {
+		    var div;
+
+		    div = $.DIV({id: 'day'+dt[0], Class: 'date'},
+				$.H2({},$.A({href: calendar_url(d[0])},d[0]),'-',
+				     $.A({href: calendar_url(d[0],d[1])},d[1]),'-',
+				     $.A({href: calendar_url(d[0],d[1],d[2])},d[2])),
+				tags = $.UL({Class: 'tags horiz'}),
+				ul = $.UL({Class: 'horiz'}));
+
+		    tags = $(tags);
+		    ul = $(ul);
+
+		    el.append(div);
+		    
+		    tagset = {};
+
+		    prevdate = d;
+		}
+
+		for (var tidx in img.tags) {
+		    var tag = img.tags[tidx];
+
+		    if (!tagset[tag.full]) {
+			tagset[tag.full] = tag;
+			tags.append($.LI({}, $.A({href: '-/' + tag.full}, tag.description || tag.full)));
+		    }
+		}
+
+		ul.append($.LI({}, packrat.thumb_template(img)));
+	    }
+
+	    tb_init($('.thickbox', el));
+	}
+
+	if (!start)
+	    start = 0;
+
+	$(el).jsonupdate(packrat.image_search_url([ 'created:' +
+						  packrat.search_date(year, month, day),
+						  search ]),
+			 { format: 'json', order: 'created',
+				 start: start, limit: 500 },
+			 result_render);	
     }
 
     var overview = function(el) {
@@ -250,6 +347,7 @@ packrat.calendar = function () {
 
 				     el.css('background-image', 'url('+img.url+');');
 				 });
+	    $('.number', el).wrap($.A({href: calendar_url(y, m, d)}));
 	};
 
 	var cal = generate_cal_grid(year, month, set_thumb);
@@ -259,10 +357,19 @@ packrat.calendar = function () {
 	el.reveal();
     }
 
+    var year = function(el, year) {
+	$(el).jsonupdate(packrat.image_search_url('created:'+year),
+			 { format: 'calendar' },
+			 function (el, data) {
+			     yearview(el, year, data[year]);
+			 });
+    }
+
     return {
 	overview: overview,
-	yearview: yearview,
-	monthview: monthview,
+
+	year: year,
+	daybyday: daybyday,
     };
 }();
 
@@ -288,16 +395,12 @@ jQuery.fn.extend({
     });
 
 var displayCalendar = function(elem, year, month, day, period, search) {
-	if (year == null) {
-	    packrat.calendar.overview(elem);
-	} else {
-		if (month == null)
-			calendarYearView(elem, year);
-		else {
-			if (day == null)
-				calendarMonthView(elem, year, month);
-			else
-				calendarDayView(elem, year, month, day, period);
-		}
-	}
+    if (year == null) {
+	packrat.calendar.overview(elem);
+    } else {
+	if (month == null)
+	    packrat.calendar.year(elem, year);
+	else
+	    packrat.calendar.daybyday(elem, year, month, day, search);
+    }
 }
