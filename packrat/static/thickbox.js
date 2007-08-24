@@ -157,19 +157,34 @@ function tb_show(caption, url, imageGroup) {//function called when the user clic
 				} else { // mozilla
 					keycode = e.which;
 				}
-				if(keycode == 27){ // close
+
+				switch(keycode) {
+					case 27:  // close
 					tb_remove();
-				} else if(keycode == 190){ // display previous image
+					break;
+
+				case 32:
+				case 39:
+				case 190:  // next
 					if(!(TB_NextHTML == "")){
 						document.onkeydown = "";
 						goNext();
 					}
-				} else if(keycode == 188){ // display next image
+					break;
+
+				case 37:
+				case 188:  // prev
 					if(!(TB_PrevHTML == "")){
 						document.onkeydown = "";
 						goPrev();
 					}
-				}	
+					break;
+
+				default:
+					//alert('unknown keycode '+keycode);
+					return true;  // pass unknown
+				}
+				return false;  // eat events
 			};
 			
 			tb_position();
