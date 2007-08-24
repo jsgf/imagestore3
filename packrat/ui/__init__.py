@@ -21,7 +21,7 @@ cal_overview = calendar
 
 urlpatterns = patterns('packrat.ui',
                        ('^$',           'index'),
-                       (r'^calendar/',  'cal_overview'),
+                       (r'^calendar/$', 'cal_overview'),
                        (r'^calendar/'
                                 r'(?:(?P<period>day|week|month|year)/)?'
                                 r'(?:(?P<year>[0-9]{4})/'
