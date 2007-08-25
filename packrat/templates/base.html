@@ -35,6 +35,7 @@
       tb_pathToImage = packrat.static + tb_pathToImage;
 
       // make sure thickbox keeps track of dynamic additions
+      // XXX too slow
       //$('.thickbox').behavior(function() { tb_init(this); });
 
       {% block pagescript %}{% endblock %}

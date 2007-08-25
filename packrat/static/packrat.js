@@ -1,6 +1,43 @@
+// Accordion
+// - an element with class acc-control causes opening/closing
+// - multiple acc-body classed pieces get alternated between
+
+accordion = function(outer, always_one) {
+    $(outer).addClass('accordion');
+    
+    // find non-nested accordion elements
+    var find = function(match, scope) {
+	return $(match, scope).not($('.accordion '+match, scope));
+    }
+
+    find('.acc-body', outer).hide();
+    if (always_one)
+	find('.acc-body:first', outer).show();
+
+    find('.acc-control', outer).click(
+	function () {
+	    var cur = find('.acc-body:visible', outer);
+	    var next = cur.next('.acc-body:hidden', outer);
+
+	    if ((always_one || cur.size() == 0) && next.size() == 0)
+		next = find('.acc-body:hidden', outer).filter(':first');
+
+	    cur.disappear();
+	    if (next.size()) {
+		// search pattern excludes context node itself?
+		if (next.is('.updateable'))
+		    next.update();
+		    
+		find('.updateable', next).update()
+		    next.reveal();
+	    }
+
+	    return false;
+	});
+};
+
 // Wrap all packrat code
 var packrat = function() {
-
     var sampler_elem_width = 100+4;
 
     // template for a thumbnail linked to a thickbox view
@@ -53,7 +90,7 @@ var packrat = function() {
 				   thumb_template(img)));
 		}
 
-		tb_init($('.thickbox', this));
+		tb_init('.thickbox');
 	    };
 	}
 	var ul = $.UL({ Class: 'horiz' });
@@ -101,6 +138,14 @@ packrat.calendar = function () {
 	return url;
     }
 
+    var parsedate = function(datestr) {
+	var dt = datestr.split('T');
+	var d = dt[0].split('-');
+	var t = dt[1].split(':');
+
+	return new Date(d[0], d[1], d[2], t[0], t[1], t[2]);
+    }
+
     var daybyday = function(el, year, month, day, search, start) {
 	var result_render = function(el, data) {
 	    // XXX set up nav links
@@ -113,17 +158,22 @@ packrat.calendar = function () {
 
 	    for (var idx in data.results) {
 		var img = data.results[idx];
-		var dt = img.created_time.split('T');
-		var d = dt[0].split('-');
-		var date = new Date(d[0], d[1], d[2]);
+		var date = parsedate(img.created_time);
+		var time = date.clone();
 
-		if (!prevdate || d > prevdate) {
+		date.clearTime();
+
+		if (!prevdate || date > prevdate) {
 		    var div;
+		    var y = date.getFullYear();
+		    var m = date.getMonth();
+		    var d = date.getDate();
+		    var ymd = y + '-' + m + '-' + d;
 
-		    div = $.DIV({id: 'day'+dt[0], Class: 'date'},
-				$.H2({},$.A({href: calendar_url(d[0])},d[0]),'-',
-				     $.A({href: calendar_url(d[0],d[1])},d[1]),'-',
-				     $.A({href: calendar_url(d[0],d[1],d[2])},d[2])),
+		    div = $.DIV({id: 'day_'+ymd, Class: 'date'},
+				$.H2({},$.A({href: calendar_url(y)},y),'-',
+				     $.A({href: calendar_url(y, m)},m),'-',
+				     $.A({href: calendar_url(y,m,d)},d)),
 				tags = $.UL({Class: 'tags horiz'}),
 				ul = $.UL({Class: 'horiz'}));
 
@@ -134,7 +184,7 @@ packrat.calendar = function () {
 		    
 		    tagset = {};
 
-		    prevdate = d;
+		    prevdate = date;
 		}
 
 		for (var tidx in img.tags) {
@@ -149,7 +199,7 @@ packrat.calendar = function () {
 		ul.append($.LI({}, packrat.thumb_template(img)));
 	    }
 
-	    tb_init($('.thickbox', el));
+	    tb_init('.thickbox');
 	}
 
 	if (!start)
@@ -186,26 +236,16 @@ packrat.calendar = function () {
 	    var id = 'year'+year;
 
 	    var dom = $.DIV({ id: id, Class: 'year-overview' },
-			    $.H2({}, click = $.A({href: '#'+id}, year),
+			    $.H2({}, $.A({href: '#'+id, Class: 'acc-control' }, year),
 				 ': '+count),
-			    sampler = $.DIV({ Class: 'sampler', id: 'sampler_'+year}),
-			    inner = $.DIV({Class: 'year'}, '...'));
+			    sampler = $.DIV({ Class: 'sampler acc-body',
+						    id: 'sampler_'+year}),
+			    inner = $.DIV({Class: 'year acc-body'}, '...'));
 
-	    inner = $(inner).hide();
-	    sampler = $(sampler);
 	    packrat.sampler(sampler, 'created:'+year, 8);
+	    $(inner).update(function () { yearview(this, year, data[year]); });
 
-	    $(click).toggle(function () {
-				sampler.disappear();
-				yearview(inner, year, data[year]);
-				return false;
-			    },
-			    function () {
-				sampler.reveal();
-				inner.disappear();
-				packrat.sampler(sampler, 'created:'+year, 8);
-				return false;
-			    });
+	    accordion(dom, true);
 
 	    return dom;
 	};
@@ -242,43 +282,30 @@ packrat.calendar = function () {
 	for (var midx in p) {
 	    var m = p[midx];
 	    (function (m) {
-		var title, content, sampler;
+		var content, sampler;
 		var id = 'month_'+year+'_'+m;
 		var mdiv = $($.DIV({ id: id }));
 
 		mdiv.append($.H3({ },
-				title = $.A({ href: "#"+id }, Date.monthNames[m-1]),
+				 $.A({ href: "#"+id, Class: 'acc-control' },
+				    Date.monthNames[m-1]),
 				': '+get_counts(months[m])));
 
-		mdiv.append(sampler = $.DIV({ Class: 'sampler' }));
-		mdiv.append(content = $.DIV({ Class: 'month' }));
+		mdiv.append(sampler = $.DIV({ Class: 'sampler acc-body' }));
+		mdiv.append(content = $.DIV({ Class: 'month acc-body' }));
+
+		accordion(mdiv, true);
 
 		div.append(mdiv);
 
-		sampler = $(sampler);
-		content = $(content);
-		content.hide();
-
-		var sampler_size = 7;
-
 		packrat.sampler(sampler, 'created:'+year+'-'+m,
-				sampler_size);
-
-		$(title).toggle(function () {
-				    sampler.disappear();
-				    monthview(content, year, m, months[m]);
-				    return false;
-				},
-				function () {
-				    sampler.reveal();
-				    content.disappear();
-				    packrat.sampler(sampler,
-						    'created:'+year+'-'+m,
-						    sampler_size);
-				    return false;
-				});
+				7);
+		$(content).update(function () {
+				      monthview(this, year, m, months[m]);
+				  });
 	    })(m);
 	}
+	el = $(el);
 	el.empty();
 	el.append(div);
 	el.reveal();
@@ -376,10 +403,28 @@ packrat.calendar = function () {
 // Simple way to update an element with json:
 // $(foo).jsonupdate(url, params, renderer...)
 jQuery.fn.extend({
+      update: function(fn) {
+	    if (typeof fn == 'undefined')
+		this.trigger('update');
+	    else {
+		this.bind('update', fn);
+		this.addClass('updateable');
+	    }
+	},
+
       jsonupdate: function(url, params, render) {
 	    var el = this;
-	    // embellishments: add "loading" spinning; error indication, etc...
-	    jQuery.getIfModified(url, params, function (data) { render(el, data); }, 'json');
+
+	    var do_update = function () {
+		// embellishments: add "loading" spinning; error indication, etc...
+		jQuery.getIfModified(url, params, function (data) { render(el, data); }, 'json');
+		return false;
+	    }
+
+	    this.update(do_update);
+
+	    do_update();
+
 	    return this;
 	},
 
