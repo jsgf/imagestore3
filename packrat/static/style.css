@@ -3,6 +3,7 @@ body {
   color: #eee;
 
   margin-left: 11em;
+  margin-right: 2em;
   margin-bottom: 5em;
 
   font-family: bitstream vera sans, verdana, arial, helvetica, sans-serif;
@@ -18,22 +19,30 @@ A:active	{ color: #ffa66b; }
   position: fixed;
   width: 9em;
   height: auto;
-  top: 5%%;
+  top: 10px;
   left: 10px;
   right: auto;
   bottom: 5%%;
 
-  font-size: 70%%;
+  font-size: 80%;
 
   border: 1px solid #555555;
 
   padding: 5px;
-
-  background-color: #444;
 }
 
 #sidebar ul > li { 
   list-style-type: none;
+}
+
+#sidebar ul ul > li { 
+  margin-left: 1em;
+  font-size: 90%;
+  font-weight: normal;
+}
+
+#sidebar li.selected { 
+  font-weight: bold;
 }
 
 ul.horiz { 
@@ -90,14 +99,14 @@ ul.horiz > li {
 #calendar table.calendar-grid td.day { 
   background-color: #777;
 }
-#calendar table.calendar-grid td.day.Sunday { 
+#calendar table.calendar-grid td.day.sunday { 
   background-color: #887;
 }
 
 #calendar table.calendar-grid td.pictures {
   background-color: #999;
 }
-#calendar table.calendar-grid td.day.Sunday.pictures {
+#calendar table.calendar-grid td.day.sunday.pictures {
   background-color: #aa9;
 }
 

@@ -2,8 +2,17 @@
 // - an element with class acc-control causes opening/closing
 // - multiple acc-body classed pieces get alternated between
 
-accordion = function(outer, always_one) {
-    $(outer).addClass('accordion');
+accordion = function(outer, useropt) {
+    var options = {
+	always_one: true,
+	start_displayed: true,
+    };
+
+    $.extend(options, useropt);
+
+    outer = $(outer);
+
+    outer.addClass('accordion');
     
     // find non-nested accordion elements
     var find = function(match, scope) {
@@ -11,7 +20,7 @@ accordion = function(outer, always_one) {
     }
 
     find('.acc-body', outer).hide();
-    if (always_one)
+    if (options.start_displayed)
 	find('.acc-body:first', outer).show();
 
     find('.acc-control', outer).click(
@@ -19,7 +28,7 @@ accordion = function(outer, always_one) {
 	    var cur = find('.acc-body:visible', outer);
 	    var next = cur.next('.acc-body:hidden', outer);
 
-	    if ((always_one || cur.size() == 0) && next.size() == 0)
+	    if ((options.always_one || cur.size() == 0) && next.size() == 0)
 		next = find('.acc-body:hidden', outer).filter(':first');
 
 	    cur.disappear();
@@ -28,9 +37,12 @@ accordion = function(outer, always_one) {
 		if (next.is('.updateable'))
 		    next.update();
 		    
-		find('.updateable', next).update()
-		    next.reveal();
+		find('.updateable', next).update();
+		next.reveal();
+		outer.removeClass('acc-hidden');
 	    }
+	    else
+		outer.addClass('acc-hidden');
 
 	    return false;
 	});
@@ -143,7 +155,7 @@ packrat.calendar = function () {
 	var d = dt[0].split('-');
 	var t = dt[1].split(':');
 
-	return new Date(d[0], d[1], d[2], t[0], t[1], t[2]);
+	return new Date(d[0], d[1]-1, d[2], t[0], t[1], t[2]);
     }
 
     var daybyday = function(el, year, month, day, search, start) {
@@ -166,19 +178,23 @@ packrat.calendar = function () {
 		if (!prevdate || date > prevdate) {
 		    var div;
 		    var y = date.getFullYear();
-		    var m = date.getMonth();
+		    var m = date.getMonth() + 1;
 		    var d = date.getDate();
 		    var ymd = y + '-' + m + '-' + d;
 
 		    div = $.DIV({id: 'day_'+ymd, Class: 'date'},
-				$.H2({},$.A({href: calendar_url(y)},y),'-',
-				     $.A({href: calendar_url(y, m)},m),'-',
+				$.H2({},
+				     $.A({href: '#', Class: 'acc-control' }, '+-'),
+				     $.A({href: calendar_url(y)},y),'-',
+				     $.A({href: calendar_url(y,m)},m),'-',
 				     $.A({href: calendar_url(y,m,d)},d)),
 				tags = $.UL({Class: 'tags horiz'}),
-				ul = $.UL({Class: 'horiz'}));
+				ul = $.UL({Class: 'horiz acc-body'}));
 
 		    tags = $(tags);
 		    ul = $(ul);
+
+		    accordion(div, { always_one: false });
 
 		    el.append(div);
 		    
@@ -242,10 +258,10 @@ packrat.calendar = function () {
 						    id: 'sampler_'+year}),
 			    inner = $.DIV({Class: 'year acc-body'}, '...'));
 
-	    packrat.sampler(sampler, 'created:'+year, 8);
+	    packrat.sampler(sampler, 'created:'+year, 7);
 	    $(inner).update(function () { yearview(this, year, data[year]); });
 
-	    accordion(dom, true);
+	    accordion(dom);
 
 	    return dom;
 	};
@@ -289,12 +305,14 @@ packrat.calendar = function () {
 		mdiv.append($.H3({ },
 				 $.A({ href: "#"+id, Class: 'acc-control' },
 				    Date.monthNames[m-1]),
-				': '+get_counts(months[m])));
+				 ': ',
+				 $.A({ href: calendar_url(year, m) },
+				     get_counts(months[m]))));
 
 		mdiv.append(sampler = $.DIV({ Class: 'sampler acc-body' }));
 		mdiv.append(content = $.DIV({ Class: 'month acc-body' }));
 
-		accordion(mdiv, true);
+		accordion(mdiv);
 
 		div.append(mdiv);
 
@@ -347,7 +365,7 @@ packrat.calendar = function () {
 
 	    dow_td.append($.SPAN({ Class: 'number' }, i));
 	    dow_td.addClass('day');
-	    dow_td.addClass(Date.dayNames[dow]);
+	    dow_td.addClass(Date.dayNames[dow].toLowerCase());
 
 	    if (callback)
 		callback(dow_td, year, month, i);
@@ -397,6 +415,60 @@ packrat.calendar = function () {
 
 	year: year,
 	daybyday: daybyday,
+
+	calendar_url: calendar_url,
+    };
+}();
+
+packrat.sidebar = function () {
+    // Add a menu, which is basically an array of objects
+    var menu = function (elem, menulist) {
+	var ul = $('>ul', elem);
+	if (ul.size() == 0) {
+	    ul = $($.UL());
+	    $(elem).append(ul);
+	}
+
+	ul.empty();
+
+	for (var mi in menulist) {
+	    var entry = menulist[mi];
+	    var attr = {};
+	    var url = '#';
+	    var item;
+
+	    if (entry.attr)
+		attr = entry.attr;
+	    if (entry.url)
+		url = entry.url;
+
+	    var e = $.LI(attr, item = $.SPAN({}, $.A({ href: url }, entry.item)));
+
+	    if (entry.selected)
+		$(e).addClass('selected');
+
+	    if (entry.id)
+		$(e).attr('id', entry.id);
+
+	    ul.append(e);
+
+	    if (entry.sub) {
+		var s = menu(e, entry.sub);
+
+		if (entry.collapse) {
+		    $(s).addClass('acc-body');
+		    $(item).append($.A({ href: '#', Class: 'acc-control' }, '+-'));
+		    accordion(e, { always_one: false,
+				   start_displayed: entry.visible });
+		}
+	    }
+	}
+
+	return ul;
+    };
+
+    return {
+	menu: menu,
     };
 }();
 
@@ -448,4 +520,29 @@ var displayCalendar = function(elem, year, month, day, period, search) {
 	else
 	    packrat.calendar.daybyday(elem, year, month, day, search);
     }
-}
+
+    $('#sb-calendar').jsonupdate(packrat.image_search_url(),
+				 { format: 'calendar' },
+				 function (el, data) {
+				     var menu = [];
+
+				     for (var y in data) {
+					 var monthmenu = [];
+
+					 for (var m in data[y]) {
+					     monthmenu.push({ item: Date.monthNames[m-1],
+								url: packrat.calendar.calendar_url(y, m),
+								selected: y == year && m == month});
+					 }
+
+					 menu.push({ item: y,
+						     url: packrat.calendar.calendar_url(y),
+						     sub: monthmenu,
+						     collapse: true,
+						     visible: y == year,
+						     selected: y == year });
+				     }
+
+				     packrat.sidebar.menu(el, menu);
+				 });
+};
