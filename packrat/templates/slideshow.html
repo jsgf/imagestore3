@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block inlinescript %}
+      packrat.sampler('#results', 'created:>=(today)-3month', 32);
+{% endblock %}
+
+{% block pageid %}id="slideshow"{% endblock %}
+{% block maintitle %}{% endblock %}
+{% block main %}
+      <div class="search-results" id="results"></div>
+{% endblock main %}
