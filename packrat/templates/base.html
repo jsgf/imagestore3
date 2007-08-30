@@ -34,12 +34,14 @@
       // set up thickbox
       tb_pathToImage = packrat.static + tb_pathToImage;
 
+
       // make sure thickbox keeps track of dynamic additions
       // XXX too slow
       //$('.thickbox').behavior(function() { tb_init(this); });
 
       {% block pagescript %}{% endblock %}
       $(document).ready(function () {
+      setup_login();
       {% block inlinescript %}{% endblock %}
       });
     </script>
@@ -54,6 +56,25 @@
 	      <div id="next"></div>
 	    </div>
 	  </li>
+	  <li>
+	    <a href="#" id="sb-login-status"></a>
+	  </li>
+	  <li id="sb-auth">
+	    <form action="{% url packrat.user.auth %}" method="POST"
+	      id="sb-login" style="display: none" class="fast">
+	      <input id="username" name="username" type="text">
+	      <input id="password" name="password" type="password">
+	      <input type="submit" value="Login">
+	      <input type="reset" value="Cancel">
+	    </form>
+	    <form action="{% url packrat.user.auth %}" method="POST"
+	      id="sb-logout" style="display: none" class="fast">
+	      <input type="hidden" name="logout" value="yes">
+	      <input type="submit" value="Logout"><input type="reset" value="Cancel">
+	    </form>
+	  </li>
+	  <li><hr /></li>
+
 	  <li id="sb-slideshow"><a href="{% url packrat.ui.index %}">Slideshow</a></li>
 	  <li id="sb-calendar"><a href="{% url packrat.ui.cal_overview %}">Calendar</a></li>
 	</ul>

@@ -2,7 +2,7 @@
 // - an element with class acc-control causes opening/closing
 // - multiple acc-body classed pieces get alternated between
 
-accordion = function(outer, useropt) {
+function accordion(outer, useropt) {
     var options = {
 	always_one: true,
 	start_displayed: true,
@@ -85,8 +85,6 @@ var packrat = function() {
     var image_search = function(el, search, params, render) {
 	if (params == null)
 	    params = {};
-
-	params.format = 'json';
 
 	$(el).jsonupdate(image_search_url(search), params, render);
     };
@@ -224,7 +222,7 @@ packrat.calendar = function () {
 	$(el).jsonupdate(packrat.image_search_url([ 'created:' +
 						  packrat.search_date(year, month, day),
 						  search ]),
-			 { format: 'json', order: 'created',
+			 { order: 'created',
 				 start: start, limit: 500 },
 			 result_render);	
     }
@@ -472,8 +470,50 @@ packrat.sidebar = function () {
     };
 }();
 
-// Simple way to update an element with json:
-// $(foo).jsonupdate(url, params, renderer...)
+packrat.auth = function () {
+    var jsonerror = function (r, err, ex, callback) {
+	var ct = r.getResponseHeader("content-type");
+	var data = ct && ct.indexOf("xml") >= 0;
+	data = data ? r.responseXML : r.responseText;
+	
+	data = eval('(' + data + ')');
+
+	callback(data);
+    };
+
+    var post = function (data, callback) {
+	var auth_url = packrat.base + 'auth/';
+	$.ajax({
+	      type: 'POST',
+		    url: auth_url,
+		    data: data,
+		    success: callback,
+		    error: function (xml, err, ex) { jsonerror(xml, err, ex, callback); },
+		    dataType: 'json',
+		    beforeSend: function (xml) { xml.setRequestHeader('Accept', 'application/javascript'); },
+		    });
+    };
+
+    var login = function(user, pass, callback) {
+	post({ username: user, password: pass}, callback);
+    };
+
+    var logout = function (callback) { 
+	post({ logout: 'yes' }, callback);
+    };
+    
+    var getstatus = function(el, render) {
+	var auth_url = packrat.base + 'auth/';
+	el.jsonupdate(auth_url, {}, render);
+    }
+	
+    return {
+	login: login,
+	logout: logout,
+	getstatus: getstatus,
+    };
+}();
+
 jQuery.fn.extend({
       update: function(fn) {
 	    if (typeof fn == 'undefined')
@@ -484,12 +524,22 @@ jQuery.fn.extend({
 	    }
 	},
 
+	    // Simple way to update an element with json:
+	    // $(foo).jsonupdate(url, params, renderer...)
       jsonupdate: function(url, params, render) {
 	    var el = this;
 
 	    var do_update = function () {
 		// embellishments: add "loading" spinning; error indication, etc...
-		jQuery.getIfModified(url, params, function (data) { render(el, data); }, 'json');
+		jQuery.ajax({
+		      type: 'GET',
+			    url: url,
+			    data: params,
+			    success: function (data) { render(el, data); },
+			    dataType: 'json',
+			    beforeSend: function (xml) { xml.setRequestHeader('Accept', 'application/javascript'); },
+			    ifModified: true });
+
 		return false;
 	    }
 
@@ -501,12 +551,18 @@ jQuery.fn.extend({
 	},
 
     reveal: function() {
-	    this.slideDown('slow');
+	    var rate = 'slow';
+	    if (this.is('.fast'))
+		rate = 'fast';
+	    this.slideDown(rate);
 	    return this;
 	},
 
     disappear: function() {
-	    this.slideUp('slow');
+	    var rate = 'slow';
+	    if (this.is('.fast'))
+		rate = 'fast';
+	    this.slideUp(rate);
 	    return this;
 	}
     });
@@ -545,4 +601,100 @@ var displayCalendar = function(elem, year, month, day, period, search) {
 
 				     packrat.sidebar.menu(el, menu);
 				 });
+};
+
+function setup_login() {
+    function update_login_status(el, data) {
+			       el = $(el);
+			       el.empty();
+			       el.removeClass('logged-in error');
+			       
+			       $('#sb-auth form').disappear();
+
+			       if (data.logged_in) {
+				   el.addClass('logged-in');
+				   el.append("Hello, ", data.user.first_name);
+			       } else {
+				   if (data.error) {
+				       el.addClass('error');
+				       el.append('error: '+data.error);
+				   } else
+				       el.append("Not logged in");
+			       }
+    }
+
+    $('#sb-login').submit(
+	function () {
+	    var user = $('#username').val();
+	    var pass = $('#password').val();
+
+	    if (user && pass)
+		packrat.auth.login(user, pass, 
+				   function (ret) {
+				       $(".updateable").not('#sb-login-status').update();
+				       update_login_status($('#sb-login-status'), ret);
+				   });
+	    $(this).disappear();
+	    return false;
+	});
+
+    $('#sb-logout').submit(function () {
+			       packrat.auth.logout(
+				   function (ret) {
+				       $(".updateable").update();
+				   });
+			       return false;
+			   });
+
+    $('#sb-auth form input[@type=reset]').click(function () {
+						    $('#sb-auth form').disappear();
+						});
+
+    var set_prompt = function(el, prompt) {
+	el = $(el);
+
+	if (el.val() == '' || el.val() == prompt) {
+	    el.addClass('prompt');
+	    el.val(prompt);
+	} else {
+	    el.removeClass('prompt');
+	}
+    }
+
+    var set_username_prompt = function () {
+	set_prompt($('#username'), 'Enter username');
+    }
+
+    $('input').keydown(function (e) {
+			   if (e.which == 27)  // esc
+			       $(this).blur();
+		       });
+
+    $('#username')
+	.focus(function () {
+		   if ($(this).is('.prompt')) {
+		       $(this).val('');
+		       $(this).removeClass('prompt');
+		   }
+	       })
+	.blur(function () {
+		  set_username_prompt();
+	      });
+    
+    packrat.auth.getstatus($('#sb-login-status'), update_login_status);
+
+    $('#sb-login-status').click(function () {
+				    if ($('#sb-auth form').is(':visible'))
+					$('#sb-auth form').disappear();
+				    else {
+					if ($(this).is('.logged-in')) {
+					    $('#sb-login').disappear();
+					    $('#sb-logout').reveal();
+					} else {
+					    set_username_prompt();
+					    $('#sb-login').reveal();
+					    $('#sb-logout').disappear();
+					}
+				    }
+				});
 };

@@ -60,6 +60,31 @@ def get_url_user(kwargs):
 
     return User.objects.get(username = id)
 
+def render_loginform(self, ns, username=None, error=None):
+    ret = ns.div()
+
+    if self.authuser is None:
+        if error:
+            ret.append(ns.p({'class': 'error'}, error))
+
+        if username:
+            userinput = ns.input(type='hidden', name='username', value=username)
+        else:
+            userinput = ns.label('Username: ', ns.input(type='text', name='username'))
+
+        ret.append(ns.form({'action': secure_path(self.request), 'method': 'POST' },
+                           userinput,
+                           ns.label('Password: ', ns.input(type='password', name='password')),
+                           ns.input(type='submit', value='Login')))
+    else:
+        ret.append(ns.p('Logged in as ', ns.a({ 'href': self.authuser.get_profile().get_absolute_url() },
+                                              self.authuser.username)))
+        ret.append(ns.form({'action': secure_path(self.request), 'method': 'POST' },
+                           ns.input(type='hidden', name='logout', value='yes'),
+                           ns.label('Logout: ', ns.input(type='submit', value='Logout'))))
+    return ret
+
+
 class UserList(restlist.List):
     def title(self, ns):
         return 'Users'
@@ -72,23 +97,8 @@ class UserList(restlist.List):
                  for u in self.entries() ]
     
     def _render_html(self, ns, error=None, *args, **kwargs):
-        ret = ns.div()
-        
-        if self.authuser is None:
-            if error:
-                ret.append(ns.p({'class': 'error'}, error))
-                
-            ret.append(ns.form({'action': secure_path(self.request), 'method': 'POST' },
-                               ns.label('Username: ', ns.input(type='text', name='username')),
-                               ns.label('Password: ', ns.input(type='password', name='password')),
-                               ns.input(type='submit')))
-        else:
-            ret.append(ns.p('Logged in as ', ns.a({ 'href': self.authuser.get_profile().get_absolute_url() },
-                                                  self.authuser.username)))
-            ret.append(ns.form({'action': secure_path(self.request), 'method': 'POST' },
-                               ns.input(type='hidden', name='logout', value='yes'),
-                               ns.label('Logout: ', ns.input(type='submit'))))
-            
+        ret = render_loginform(self, ns, None, error)
+    
         ret.append(ns.ul({ 'class': 'users' },
                          [ ns.li({ 'id': u.urluser.username },
                                  microformat.hcard(u.urluser, ns=ns))
@@ -102,11 +112,12 @@ class UserList(restlist.List):
     def do_POST(self, *args, **kwargs):
         return do_loginout(self, self.request, *args, **kwargs)
 
-def do_loginout(self, request, *args, **kwargs):
+def do_loginout(self, request, redir_to_user=True, *args, **kwargs):
     resp = HttpResponseRedirect(self.get_absolute_url())
 
     if self.authuser and self.request.POST.get('logout'):
         logout(self.request)
+        self.authuser = None
     elif self.request.POST.get('username') and self.request.POST.get('password'):
         user = authenticate(username=self.request.POST.get('username'),
                             password=self.request.POST.get('password'))
@@ -118,11 +129,12 @@ def do_loginout(self, request, *args, **kwargs):
             self.authuser = user
 
         if user is None or not user.is_active:
-            resp = self.render(format='html', error='Login failed', *args, **kwargs)
+            resp = self.render(self.format, error='Login failed', *args, **kwargs)
             self.status_code = 403      # forbidden
         else:
             login(self.request, user)
-            resp = HttpResponseRedirect(user.get_profile().get_absolute_url())
+            if redir_to_user:
+                resp = HttpResponseRedirect(user.get_profile().get_absolute_url())
 
     return resp
 
@@ -150,11 +162,11 @@ class UserEntry(restlist.Entry):
         up = u.get_profile()
 
         ret = extract_attr(u, [ 'id', 'username', 'last_name', 'first_name', 'email' ])
-        ret.update({'picture-count':    u.pictures.count(),
+        ret.update({'picture_count':    u.pictures.count(),
                     'urn':              up.get_urn(self.request),
-                    'camera-url':       up.get_camera_url(),
-                    'image-url':        up.get_image_url(),
-                    'logged-in':        self.authuser == self.urluser,
+                    'camera_url':       up.get_camera_url(),
+                    'image_url':        up.get_image_url(),
+                    'logged_in':        self.authuser == self.urluser,
                     'friends':          u.get_profile().friends.all() })
 
         return ret
@@ -170,19 +182,8 @@ class UserEntry(restlist.Entry):
 
         content.append(microformat.hcard(u, ns))
 
-        if self.authuser is None:
-            if error:
-                content.append(ns.p({'class': 'error'}, error))
-                
-            content.append(ns.form({'action': secure_path(self.request), 'method':'POST' },
-                                   ns.input(type='hidden', name='username', value=self.urluser.username),
-                                   ns.label('Login Password: ', ns.input(type='password', name='password')),
-                                   ns.input(type='submit')))
-        elif self.authuser == self.urluser:
-            content.append(ns.form({'action': secure_path(self.request), 'method':'POST' },
-                                   ns.input(type='hidden', name='logout', value='yes'),
-                                   ns.label('Logout: ', ns.input(type='submit'))))
-            
+        content.append(render_loginform(self, ns, u.username, error))
+
         detail = ns.dl()
         content.append(detail)
         
@@ -210,9 +211,38 @@ class UserEntry(restlist.Entry):
 
     def get_absolute_url(self):
         return self.urluser.get_profile().get_absolute_url()
+
+class UserAuth(restlist.Entry):
+    @permalink
+    def get_absolute_url(self):
+        return ('packrat.user.auth', (), {})
+
+    def title(self, ns):
+        return ''
     
+    def _render_html(self, ns, error=None, *args, **kwargs):
+        return render_loginform(self, ns, None, error)
+
+    def render_json(self, error=None, *args, **kwargs):
+        ret = { 'logged_in': self.authuser is not None }
+        
+        if self.authuser:
+            ret['user'] = self.authuser
+        elif error:
+            ret['error'] = error
+
+        return ret
+
+    def do_POST(self, *args, **kwargs):
+        ret = do_loginout(self, self.request, redir_to_user=False, *args, **kwargs)
+        if (self.status_code / 100) != 4:
+            ret = self.render(*args, **kwargs)
+        return ret
+
 userlist = UserList()
 user = UserEntry()
+
+auth = UserAuth()
 
 urlpatterns = patterns('',
                        ('^$',                           userlist),

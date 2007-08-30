@@ -35,6 +35,7 @@ urlpatterns = patterns('',
             ('^camera/$',               'packrat.camera.cameralist'),
             ('^image/',                 include('packrat.picture')),
             ('^user/',                  include('packrat.user')),
+            ('^auth/$',                 'packrat.user.auth'),
             ('^tag/',                   include('packrat.tag')),
 #            ('^test/$',         'packrat.rest.test'),
 )

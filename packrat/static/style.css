@@ -26,9 +26,29 @@ A:active	{ color: #ffa66b; }
 
   font-size: 80%;
 
-  border: 1px solid #555555;
+  border: 1px solid #555;
 
   padding: 5px;
+}
+
+#sidebar hr {
+  margin-top: .5em;
+  margin-bottom: .5em;
+  border: 0px solid;
+  border-bottom: 1px solid #555;
+  text-align: middle;
+}
+
+/* login/logout forms */
+#sb-auth form { 
+  top: 0px;
+  position: absolute;
+  background: #555;
+  border: 1px solid #777;
+  padding: .5em;
+  overflow: visible;
+/*   width: 10.5em; */
+  width: auto;
 }
 
 #sidebar ul > li { 
@@ -43,6 +63,29 @@ A:active	{ color: #ffa66b; }
 
 #sidebar li.selected { 
   font-weight: bold;
+}
+
+input { 
+  margin: .2em;
+}
+
+/* General input control styling */
+input:focus, input:focus { 
+  background-color: white;
+}
+
+input:focus[type=text], input:focus[type=password] { 
+  background-color: #ffa;
+}
+
+input.prompt { 
+  color: #aaa;
+}
+
+/* Errors/alerts */
+.error { 
+  border: 2px solid red;
+  display: block;
 }
 
 ul.horiz { 
