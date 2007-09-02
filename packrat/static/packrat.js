@@ -57,10 +57,15 @@ var packrat = function() {
 	var th = img.sizes.stamp;
 	var p = img.sizes.small;
 
-	return $.SPAN({ Class: 'thumb' },
-		      $.A({ href: p.url, Class: 'thickbox', rel: 'search-results', title: img.title },
-			  $.IMG({ width: th.width, height: th.height,
-					src: th.url, title: img.title })));
+	ret = $.SPAN({ Class: 'thumb' },
+		     $.A({ href: p.url, Class: 'thickbox', 
+				 rel: 'search-results', title: img.title },
+			 $.IMG({ width: th.width, height: th.height,
+				       src: th.url, title: img.title })));
+	if (img.may_edit)
+	    $(ret).addClass('editable');
+
+	return ret;
     };
 
     var search_date = function(year, month, day) {
