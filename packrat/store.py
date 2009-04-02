@@ -1,168 +1,112 @@
 from __future__ import absolute_import
 
 import sha, md5
-from os import makedirs
+import os, os.path
+import glob
 import cPickle as pickle
 
-from django.db import models
-
-from .media import Media
+class Content(object):
+    __slots__ = [ 'store', 'key', 'priv', 'meta' ]
+    
+    def __init__(self, store, key, priv):
+        self.store = store
+        self.key = key
+        self.priv = priv
 
 class ContentStore(object):
-    """ Base class for a generic content store """
+    def __init__(self):
+        pass
 
-    __slots__ = ( 'key', '_sha1', 'visibility', 'offset', 'size',
-                  '_chunk', '_chunkgen' )
+    def create(self, key, priv, meta, data):
+        pass
 
-    def metakey(self):
-        return '%s__meta' % self.key
-    
-    def __init__(self, key):
-        if key.endswith('__meta'):
-            raise KeyError('bad key name %s' % key)
+    def delete(self, key):
+        pass
 
-        self._sha1 = None
+    def read(self, key):
+        pass
 
-        self.key = key
-        self.offset = 0
+class FileContent(Content):
+    def __init__(self, store, key, priv):
+        super(FileContent, self).__init__(store, key, priv)
 
-        self._chunkgen = None
-        self._chunk = None
+    def datapath(self):
+        return self.store.datapath(self.key, self.priv)
 
-    def sha1(self):
-        if self._sha1 is None:
-            self._sha1 = self.get_sha1()
-        return self._sha1
+    def metapath(self):
+        return self.store.metapath(self.key, self.priv)
+        
+    def read(self):
+        return file(self.datapath(), 'rb').read()
 
-    def store(self, data, sha1=None, vis='private'):
-        assert vis in ('private', 'public')
+    def readmeta(self):
+        return pickle.load(file(self.metapath(), 'rb'))
+        
+    def writemeta(self, meta):
+        pickle.dump(meta, file(self.metapath(), 'wb'), 2)
+                    
+    def url(self):
+        if self.store.puburl and self.priv == 'public':
+            return '%s/%s/data' % (self.store.puburl, self.key)
 
-        if sha1 is None:
-            sha1 = sha.new(data)
-            sha1 = sha1.digest().encode('hex')
-            
-        self._sha1 = sha1
-        self.visibility = vis
+        return None
 
-        self._store(key, data)
-        if True:
-            self.verify()
+    def setpriv(self, priv):
+        assert priv in ('public', 'private')
 
-        self.seek(0)
-
-    def verify(self):
-        sha1 = sha.new()
-
-        for chunk in self.chunks():
-            sha1.update(chunk)
-
-        return sha1.digest().encode('hex') == self.sha1()
-
-    def tell(self):
-        return self.offset    
-
-    def seek(self, off, whence = 0):
-        if whence == 0:
-            pass
-        elif whence == 1:
-            off = self.off + off
-        elif whence == 2:
-            off = self.size() + off
-
-        assert off >= 0 and off < self.size
-
-        # slow but generic
-        self.offset = off
-        chunk = None
-        chunkbase = 0
-        self._chunkgen = self.chunks()
-        for c in self._chunkgen:
-            if chunkbase <= off and chunkbase + len(c) >= off:
-                chunk = c
-                break
-            chunkbase += len(c)
-
-        assert chunk is not None
-
-        self._chunk = chunk
-
-        return off
-    
-    def read(self, size=None):
-        if self._chunkgen is None:
-            self._chunkgen = self.chunks()
-            
-        if self._chunk is None:
-            try:
-                self._chunk = self._chunkgen.next()
-            except StopIteration:
-                return ''                # EOF
-
-        if size is None or size < 0 or size > len(self._chunk):
-            size = len(self._chunk)
-
-        ret = self._chunk[:size]
-        self.offset += size
-        self._chunk = self._chunk[size:]
-
-        if len(self._chunk) == 0:
-            self._chunk = None
-
-        return ret
-
-class DBContentStore(ContentStore):
-    def _store(self, data):
-        Media.store(data, self.key, self._sha1)
-
-    def _get(self):
-        return Media.get(self.key)
-
-    def size(self):
-        return self.get().datasize
-
-    def get_sha1(self):
-        return Media.get(self.key).sha1hash
-
-    def chunks(self):
-        return Media.get(self.key).chunks()
+        old = self.store.path(self.key, self.priv)
+        self.priv = priv
+        new = self.store.path(self.key, self.priv)
+        os.renames(old, new)
 
 class FileContentStore(ContentStore):
-    class meta(object):
-        def __init__(self, sha1):
-            self.sha1 = sha1
+    __slots__ = [ 'pubroot', 'privroot' ]
+    
+    def __init__(self, pubroot, privroot=None, puburl=None):
+        if privroot is None:
+            privroot = pubroot
 
-    def dirname(self):
-        return 'data/'
+        self.pubroot = pubroot
+        self.privroot = privroot
+        self.puburl = puburl
 
-    def filename(self):
-        return self.dirname() + self.key
-
-    def metaname(self):
-        return self.dirname() + self.metakey()
-
-    def _store(self, data):
-        __slots__ = [ 'file' ]
+    def path(self, key, priv):
+        assert priv in ('public', 'private')
         
-        makedirs(self.dirname())
-        
-        f = open(self.filename(), 'w')
-        f.write(data)
-        f.close()
+        root = self.privroot
+        if priv == 'public':
+            root = self.pubroot
 
-        f = open(self.metaname(), 'w')
-        m = meta(self._sha1)
-        pickle.dump(m, f)
-        f.close()
+        return os.path.join(root, priv, key)
 
-    def get_sha1(self):
-        f = open(self.metaname())
-        m = pickle.load(f)
-        close(f)
+    def find(self, keyprefix):
+        pub = [ ('public', os.path.basename(pub)) for pub in
+                glob.glob('%s/public/%s*' % (self.pubroot, keyprefix)) ]
+        priv = [ ('private', os.path.basename(priv)) for priv in
+                glob.glob('%s/private/%s*' % (self.pubroot, keyprefix)) ]
 
-    def chunks(self):
-        f = open(self.filename(), 'r', 32*1024)
-        for r in f:
-            yield r
+        return pub + priv
 
-        f.close()
+    def datapath(self, key, priv):
+        return os.path.join(self.path(key, priv), 'data')
+
+    def metapath(self, key, priv):
+        return os.path.join(self.path(key, priv), '__meta')
+
+    def exists(self, key, priv):
+        return os.path.exists(self.path(key, priv))
+
+    def create(self, key, data, meta=None, priv='private', cache=False):
+        path = self.path(key, priv)
+        if not os.path.exists(path):
+            os.makedirs(path)
             
+        file(self.datapath(key, priv), 'wb').write(data)
+
+        ret = self.get(key, priv)
+        ret.writemeta(meta)
+
+        return ret
+        
+    def get(self, key, priv):
+        return FileContent(self, key, priv)
